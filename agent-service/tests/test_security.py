@@ -68,3 +68,21 @@ def test_control_api_requires_bearer_auth(monkeypatch):
         # LLM key is configured, proving that the API is not accidentally open.
         assert response.status_code == 503
         assert "NANOU_LLM_API_KEY" in response.json()["error"]
+
+def test_mcp_control_endpoint_fails_closed_without_token(monkeypatch):
+    monkeypatch.delenv("NANOU_AGENT_API_KEY", raising=False)
+    with TestClient(app) as client:
+        response = client.get("/mcp")
+        assert response.status_code == 503
+        assert "NANOU_AGENT_API_KEY" in response.json()["error"]
+
+
+def test_mcp_control_endpoint_rejects_wrong_bearer_token(monkeypatch):
+    monkeypatch.setenv("NANOU_AGENT_API_KEY", "test-only-token")
+    with TestClient(app) as client:
+        response = client.get(
+            "/mcp",
+            headers={"Authorization": "Bearer incorrect-token"},
+        )
+        assert response.status_code == 401
+        assert response.headers["www-authenticate"] == "Bearer"
