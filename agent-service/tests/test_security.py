@@ -326,3 +326,64 @@ def test_close_all_disconnects_without_closing_attached_cdp_browser():
     assert browser.closed is False
     assert playwright.stopped is True
     assert pool._using_cdp is False
+
+
+def test_fetch_uses_ephemeral_context_without_evicting_live_sessions(monkeypatch):
+    import server
+
+    class FakePage:
+        url = "https://example.com/"
+        async def goto(self, *_args, **_kwargs):
+            return None
+        async def wait_for_timeout(self, _ms):
+            return None
+
+    class FakeContext:
+        def __init__(self):
+            self.closed = False
+            self.page = FakePage()
+        async def route(self, *_args, **_kwargs):
+            return None
+        async def new_page(self):
+            return self.page
+        async def close(self):
+            self.closed = True
+
+    class FakeBrowser:
+        def __init__(self, context):
+            self.context = context
+        async def new_context(self, **_kwargs):
+            return self.context
+
+    context = FakeContext()
+    async def fake_assert(url):
+        return url
+    async def fake_snapshot(_page):
+        return {
+            "url": "https://example.com/",
+            "title": "Example Domain",
+            "text": "x" * 1000,
+            "elements": [
+                {"tag": "a", "text": "Example", "href": "https://example.com/"},
+            ],
+            "truncated": False,
+        }
+    async def fake_browser():
+        return FakeBrowser(context)
+
+    monkeypatch.setattr(server, "_assert_public_url", fake_assert)
+    monkeypatch.setattr(server.pool, "_ensure_browser", fake_browser)
+    monkeypatch.setattr(server.pool, "_snapshot_page", fake_snapshot)
+    monkeypatch.setattr(
+        server.pool,
+        "create",
+        lambda _url: pytest.fail("Fetch must not evict/use a persistent browser session."),
+    )
+
+    result = asyncio.run(server.fetch_public_page("https://example.com/", 500))
+
+    assert result["title"] == "Example Domain"
+    assert len(result["content"]) == 500
+    assert result["truncated"] is True
+    assert result["links"][0]["url"] == "https://example.com/"
+    assert context.closed is True
