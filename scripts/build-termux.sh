@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/android-sdk}}"
 AAPT2_WRAPPER="${AAPT2_WRAPPER:-$HOME/.local/bin/aapt2}"
 GRADLE_COMMAND=(./gradlew)
+BUILD_LOG="$HOME/nanou-browser-build.log"
 
 if [[ ! -d "$SDK_ROOT/platforms/android-35" ]]; then
   echo "ERROR: Android SDK Platform 35 missing at $SDK_ROOT/platforms/android-35" >&2
@@ -45,9 +46,19 @@ echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 echo "JAVA_VERSION=$(java -version 2>&1 | head -n 1)"
 echo "RUNNING_UNIT_TESTS_AND_DEBUG_APK_BUILD"
 
-"${GRADLE_COMMAND[@]}" --no-daemon --no-parallel \
+if "${GRADLE_COMMAND[@]}" --no-daemon --no-parallel \
   -Dorg.gradle.workers.max=1 testDebugUnitTest assembleDebug \
-  --console=plain --stacktrace
+  --console=plain --stacktrace 2>&1 | tee "$BUILD_LOG"; then
+  echo "GRADLE_BUILD_EXIT=0"
+else
+  rc=$?
+  echo "GRADLE_BUILD_EXIT=$rc"
+  DOWNLOADS="$HOME/storage/downloads"
+  if [[ -d "$DOWNLOADS" && -w "$DOWNLOADS" ]]; then
+    cp "$BUILD_LOG" "$DOWNLOADS/NanouBrowser-build.log" || true
+  fi
+  exit "$rc"
+fi
 
 test -s "$APK"
 unzip -t "$APK" | tail -n 2
@@ -68,6 +79,9 @@ if [[ -d "$DOWNLOADS" && -w "$DOWNLOADS" ]]; then
   cp "$APK" "$DOWNLOADS/NanouBrowser-debug.apk"
   test -s "$DOWNLOADS/NanouBrowser-debug.apk"
   echo "APK_COPIED_TO=$DOWNLOADS/NanouBrowser-debug.apk"
+  cp "$BUILD_LOG" "$DOWNLOADS/NanouBrowser-build.log"
+  echo "BUILD_LOG_COPIED_TO=$DOWNLOADS/NanouBrowser-build.log"
 else
   echo "DOWNLOADS_COPY=SKIPPED (run termux-setup-storage to enable it)"
+  echo "BUILD_LOG_PATH=$BUILD_LOG"
 fi
