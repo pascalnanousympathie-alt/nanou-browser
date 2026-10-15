@@ -9,7 +9,7 @@ import re
 import socket
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote_plus, urlsplit
 from uuid import uuid4
 
@@ -476,6 +476,16 @@ def validate_search_query(query: str) -> str:
     return query
 
 
+def validate_search_options(recency: str, category: str) -> tuple[str, str]:
+    recency = str(recency).strip().lower()
+    category = str(category).strip().lower()
+    if recency not in {"any", "day", "week", "month", "year"}:
+        raise ValueError("recency must be any, day, week, month, or year.")
+    if category not in {"web", "news", "research"}:
+        raise ValueError("category must be web, news, or research.")
+    return recency, category
+
+
 def validate_search_limit(max_results: int) -> int:
     if isinstance(max_results, bool) or not isinstance(max_results, int) or not 1 <= max_results <= 10:
         raise ValueError("max_results must be an integer between 1 and 10.")
@@ -488,10 +498,24 @@ def validate_fetch_limit(max_chars: int) -> int:
     return max_chars
 
 
-async def search_public_web(query: str, max_results: int = 5) -> dict[str, Any]:
+async def search_public_web(
+    query: str,
+    max_results: int = 5,
+    recency: str = "any",
+    category: str = "web",
+) -> dict[str, Any]:
     query = validate_search_query(query)
     max_results = validate_search_limit(max_results)
-    search_url = "https://html.duckduckgo.com/html/?q=" + quote_plus(query)
+    recency, category = validate_search_options(recency, category)
+    provider_query = query
+    if category == "research":
+        provider_query = f"{query} research paper journal article preprint"
+    search_url = "https://html.duckduckgo.com/html/?q=" + quote_plus(provider_query)
+    time_filter = {"day": "d", "week": "w", "month": "m", "year": "y"}.get(recency)
+    if time_filter:
+        search_url += "&df=" + time_filter
+    if category == "news":
+        search_url += "&iar=news&ia=news"
     session: BrowserSession | None = None
     try:
         session = await pool.create(search_url)
@@ -533,6 +557,8 @@ async def search_public_web(query: str, max_results: int = 5) -> dict[str, Any]:
                 break
         return {
             "query": query,
+            "category": category,
+            "recency": recency,
             "provider": "DuckDuckGo HTML",
             "results": results,
             "result_count": len(results),
@@ -604,7 +630,7 @@ LLM_TOOLS: list[dict[str, Any]] = [
         "function": {
             "name": "search",
             "description": "Search the public web and return linked results with snippets. Verify sources before relying on snippets.",
-            "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "max_results": {"type": "integer", "minimum": 1, "maximum": 10}}, "required": ["query"]},
+            "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "max_results": {"type": "integer", "minimum": 1, "maximum": 10}, "recency": {"type": "string", "enum": ["any", "day", "week", "month", "year"]}, "category": {"type": "string", "enum": ["web", "news", "research"]}}, "required": ["query"]},
         },
     },
     {
@@ -698,7 +724,12 @@ SYSTEM_PROMPT = (
 
 async def _execute_agent_tool(session_id: str, name: str, arguments: dict[str, Any]) -> Any:
     if name == "search":
-        return await search_public_web(str(arguments.get("query", "")), int(arguments.get("max_results", 5)))
+        return await search_public_web(
+            str(arguments.get("query", "")),
+            int(arguments.get("max_results", 5)),
+            str(arguments.get("recency", "any")),
+            str(arguments.get("category", "web")),
+        )
     if name == "fetch":
         return await fetch_public_page(str(arguments.get("url", "")), int(arguments.get("max_chars", MAX_PAGE_TEXT)))
     if name == "fetch_many":
@@ -911,10 +942,15 @@ mcp = FastMCP(
 
 
 @mcp.tool()
-async def browser_search(query: str, max_results: int = 5) -> dict[str, Any]:
-    """Search the public web and return source URLs, titles, and snippets. Verify source pages before relying on search snippets."""
+async def browser_search(
+    query: str,
+    max_results: int = 5,
+    recency: Literal["any", "day", "week", "month", "year"] = "any",
+    category: Literal["web", "news", "research"] = "web",
+) -> dict[str, Any]:
+    """Search public web, news, or research-oriented results with optional recency filtering; verify linked source pages before relying on snippets."""
     try:
-        return await search_public_web(query, max_results)
+        return await search_public_web(query, max_results, recency, category)
     except Exception as exc:
         return {"error": str(exc)[:800]}
 
