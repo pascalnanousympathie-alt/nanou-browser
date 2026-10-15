@@ -463,7 +463,8 @@ def validate_local_cdp_url(url: str) -> str:
         raise ValueError("NANOU_BROWSER_CDP_URL has an invalid port.") from exc
     if port is None or not 1 <= port <= 65535:
         raise ValueError("NANOU_BROWSER_CDP_URL must specify a valid local port.")
-    return f"http://{host}:{port}"
+    rendered_host = f"[{host}]" if ":" in host else host
+    return f"http://{rendered_host}:{port}"
 
 
 def validate_search_query(query: str) -> str:
