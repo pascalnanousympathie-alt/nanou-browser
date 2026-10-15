@@ -12,7 +12,7 @@ Nanou Browser is an independent Android browser implementation created outside R
 - No analytics or account service; bookmarks and history remain in local app storage.
 
 ## Build and tests
-Requirements: JDK 17+, Android SDK Platform 35, Build Tools 35.0.0.
+Requirements: JDK 17+, Android SDK Platform 35, Build Tools 34.0.0.
 
 Run:
 
@@ -24,7 +24,7 @@ The debug APK is produced at:
 
 ### Build directly on Termux
 
-This is the independent build path when GitHub-hosted Actions cannot start. On the Android phone, install Java 17+ and Android SDK Platform 35 / Build Tools 35.0.0.
+This is the independent build path when GitHub-hosted Actions cannot start. On the Android phone, install Java 17+ and Android SDK Platform 35 / Build Tools 34.0.0.
 
 For an **existing clone**, get the current Nanou Browser fix branch before building:
 

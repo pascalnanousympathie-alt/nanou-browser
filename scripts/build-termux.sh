@@ -9,17 +9,19 @@ BUILD_LOG="$HOME/nanou-browser-build.log"
 
 if [[ ! -d "$SDK_ROOT/platforms/android-35" ]]; then
   echo "ERROR: Android SDK Platform 35 missing at $SDK_ROOT/platforms/android-35" >&2
-  echo "Install it with sdkmanager 'platforms;android-35' and Build Tools 35.0.0." >&2
+  echo "Install it with sdkmanager 'platforms;android-35' and Build Tools 34.0.0." >&2
   exit 2
 fi
 
-if [[ ! -d "$SDK_ROOT/build-tools/35.0.0" ]]; then
-  echo "ERROR: Android Build Tools 35.0.0 missing at $SDK_ROOT/build-tools/35.0.0" >&2
-  echo "Install it with sdkmanager 'build-tools;35.0.0'." >&2
+if [[ ! -d "$SDK_ROOT/build-tools/34.0.0" ]]; then
+  echo "ERROR: Android Build Tools 34.0.0 missing at $SDK_ROOT/build-tools/34.0.0" >&2
+  echo "Install it with sdkmanager 'build-tools;34.0.0'." >&2
   exit 2
 fi
 
 if [[ -n "${PREFIX:-}" && "$PREFIX" == */com.termux/files/usr ]]; then
+  # Termux can be very slow while Gradle's instrumentation agent scans its classpath.
+  GRADLE_COMMAND+=("-Dorg.gradle.internal.instrumentation.agent=false")
   if [[ ! -x "$AAPT2_WRAPPER" ]]; then
     echo "ERROR: Termux AAPT2 wrapper not executable: $AAPT2_WRAPPER" >&2
     echo "Set AAPT2_WRAPPER to a compatible wrapper (for example, the existing $HOME/.local/bin/aapt2)." >&2
@@ -63,7 +65,7 @@ fi
 test -s "$APK"
 unzip -t "$APK" | tail -n 2
 
-APKSIGNER="$SDK_ROOT/build-tools/35.0.0/apksigner"
+APKSIGNER="$SDK_ROOT/build-tools/34.0.0/apksigner"
 if [[ -x "$APKSIGNER" ]]; then
   "$APKSIGNER" verify "$APK"
   echo "APK_SIGNATURE=PASS"
