@@ -19,7 +19,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: nanou-browser-agent-ci
+  # A push and its matching pull_request synchronization must not cancel each other.
+  # Isolate events while retaining cancellation for superseded runs of the same event/ref.
+  group: nanou-browser-agent-ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
