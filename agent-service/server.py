@@ -295,14 +295,32 @@ class BrowserPool:
         raise ValueError("No visible button, link, or text matched that target.")
 
     async def click(self, session_id: str, target: str) -> dict[str, Any]:
+        blocked = {
+            "blocked": True,
+            "reason": "This looks like a consequential action (payment, purchase, account deletion, or irreversible submission). Open and inspect the page, then ask the user to perform that final action themselves.",
+        }
         if _high_impact_target(target):
-            return {
-                "blocked": True,
-                "reason": "This looks like a consequential action (payment, purchase, account deletion, or irreversible submission). Open and inspect the page, then ask the user to perform that final action themselves.",
-            }
+            return blocked
         session = self.get(session_id)
         async with session.lock:
             locator = await self._locator(session.page, target, "click")
+            # Do not trust only the model-supplied locator/name: CSS selectors such as
+            # css:button.primary can hide the actual consequential action label.
+            try:
+                actual_target = await locator.evaluate(
+                    """el => [
+                      el.innerText,
+                      el.textContent,
+                      el.getAttribute('aria-label'),
+                      el.getAttribute('title'),
+                      el.getAttribute('value'),
+                      el.getAttribute('name')
+                    ].filter(Boolean).join(' ').trim()"""
+                )
+            except Exception:
+                actual_target = ""
+            if _high_impact_target(str(actual_target or "")):
+                return blocked
             await locator.click(timeout=8000)
             await session.page.wait_for_timeout(250)
             return await self._status_unlocked(session_id, session)
