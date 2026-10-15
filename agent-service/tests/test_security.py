@@ -1,4 +1,8 @@
+import asyncio
+import socket
+
 import pytest
+import server
 from starlette.testclient import TestClient
 
 from server import (
@@ -277,3 +281,48 @@ def test_search_options_reject_unsupported_filters(recency, category):
 def test_search_options_normalize_recency_and_category():
     assert validate_search_options(" WEEK ", "News") == ("week", "news")
     assert validate_search_options("any", "research") == ("any", "research")
+
+
+def test_public_dns_decision_is_not_cached(monkeypatch):
+    answers = []
+
+    def fake_getaddrinfo(host, _port, _family, _socktype):
+        answers.append(host)
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 0))]
+
+    monkeypatch.setattr(server.socket, "getaddrinfo", fake_getaddrinfo)
+    server.HOST_CACHE.pop("nanou-test-public.invalid", None)
+    assert asyncio.run(server._host_is_public("nanou-test-public.invalid")) is True
+    assert asyncio.run(server._host_is_public("nanou-test-public.invalid")) is True
+    assert answers == ["nanou-test-public.invalid", "nanou-test-public.invalid"]
+    assert "nanou-test-public.invalid" not in server.HOST_CACHE
+
+
+def test_close_all_disconnects_without_closing_attached_cdp_browser():
+    from server import BrowserPool
+
+    class FakeBrowser:
+        closed = False
+
+        def is_connected(self):
+            return True
+
+        async def close(self):
+            self.closed = True
+
+    class FakePlaywright:
+        stopped = False
+
+        async def stop(self):
+            self.stopped = True
+
+    pool = BrowserPool()
+    browser = FakeBrowser()
+    playwright = FakePlaywright()
+    pool._browser = browser
+    pool._playwright = playwright
+    pool._using_cdp = True
+    asyncio.run(pool.close_all())
+    assert browser.closed is False
+    assert playwright.stopped is True
+    assert pool._using_cdp is False
