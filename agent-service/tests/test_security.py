@@ -387,3 +387,38 @@ def test_fetch_uses_ephemeral_context_without_evicting_live_sessions(monkeypatch
     assert result["truncated"] is True
     assert result["links"][0]["url"] == "https://example.com/"
     assert context.closed is True
+
+
+def test_press_blocks_high_impact_link_without_form(monkeypatch):
+    from server import pool
+
+    class FakePage:
+        async def wait_for_timeout(self, _milliseconds):
+            return None
+
+    class FakeLocator:
+        async def evaluate(self, script):
+            # Simulate the actual DOM script: the old implementation returned
+            # an empty label when the activated link was not inside a form.
+            return "Pay now" if "const label = [" in script else ""
+
+        async def press(self, *_args, **_kwargs):
+            pytest.fail("Enter must not activate a high-impact link.")
+
+    class FakeSession:
+        def __init__(self):
+            self.lock = asyncio.Lock()
+            self.page = FakePage()
+
+    session = FakeSession()
+    locator = FakeLocator()
+    async def fake_locator(_page, _target, _action):
+        return locator
+
+    monkeypatch.setattr(pool, "get", lambda _session_id: session)
+    monkeypatch.setattr(pool, "_locator", fake_locator)
+
+    result = asyncio.run(pool.press("test-session", "css:a.buy", "Enter"))
+
+    assert result["blocked"] is True
+    assert "consequential action" in result["reason"]
