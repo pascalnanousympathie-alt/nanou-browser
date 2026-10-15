@@ -6,6 +6,7 @@ from server import (
     app,
     _high_impact_target,
     validate_fetch_limit,
+    validate_local_cdp_url,
     validate_fetch_urls,
     validate_public_url,
     validate_search_limit,
@@ -227,3 +228,32 @@ def test_fetch_many_rejects_invalid_url_lists(urls):
 def test_fetch_many_accepts_one_to_ten_public_http_urls():
     urls = ["https://example.com", "https://example.org/path"]
     assert validate_fetch_urls(urls) == urls
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://127.0.0.1:9223",
+        "http://192.168.1.8:9223",
+        "http://0.0.0.0:9223",
+        "http://user@localhost:9223",
+        "http://localhost",
+        "http://localhost:99999",
+        "http://localhost:9223/json",
+        "http://localhost:9223/?token=secret",
+    ],
+)
+def test_cdp_url_rejects_nonlocal_or_ambiguous_endpoints(url):
+    with pytest.raises(ValueError):
+        validate_local_cdp_url(url)
+
+
+def test_cdp_url_accepts_loopback_only():
+    assert validate_local_cdp_url("http://127.0.0.1:9223") == "http://127.0.0.1:9223"
+    assert validate_local_cdp_url("http://localhost:9223/") == "http://localhost:9223"
+    assert validate_local_cdp_url("http://[::1]:9223") == "http://[::1]:9223"
+
+
+def test_autonomous_runner_exposes_batch_fetch():
+    names = {tool["function"]["name"] for tool in LLM_TOOLS}
+    assert "fetch_many" in names
