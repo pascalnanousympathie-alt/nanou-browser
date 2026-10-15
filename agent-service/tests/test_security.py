@@ -122,3 +122,39 @@ def test_click_blocks_high_impact_element_even_when_css_selector_hides_label(mon
 
     assert result["blocked"] is True
     assert "consequential action" in result["reason"]
+
+
+def test_press_blocks_enter_when_form_contains_high_impact_submit(monkeypatch):
+    import asyncio
+
+    from server import pool
+
+    class FakePage:
+        async def wait_for_timeout(self, _milliseconds):
+            return None
+
+    class FakeLocator:
+        async def evaluate(self, _script):
+            return "button Pay now"
+
+        async def press(self, *_args, **_kwargs):
+            pytest.fail("Enter must not submit a consequential form.")
+
+    class FakeSession:
+        def __init__(self):
+            self.lock = asyncio.Lock()
+            self.page = FakePage()
+
+    session = FakeSession()
+    locator = FakeLocator()
+
+    async def fake_locator(_page, _target, _action):
+        return locator
+
+    monkeypatch.setattr(pool, "get", lambda _session_id: session)
+    monkeypatch.setattr(pool, "_locator", fake_locator)
+
+    result = asyncio.run(pool.press("test-session", "Email", "Enter"))
+
+    assert result["blocked"] is True
+    assert "consequential action" in result["reason"]
