@@ -346,6 +346,33 @@ class BrowserPool:
         session = self.get(session_id)
         async with session.lock:
             locator = await self._locator(session.page, target, "press")
+            # Enter/Space can submit a form without going through click(). If that
+            # form contains a consequential submit control, keep the human-confirmation boundary.
+            if key.strip().lower() in {"enter", "numpadenter", "space"}:
+                try:
+                    form_targets = await locator.evaluate(
+                        """el => {
+                          const form = el.closest('form');
+                          if (!form) return '';
+                          return Array.from(form.querySelectorAll(
+                            'button,input[type="submit"],input[type="button"],[role="button"]'
+                          )).map(item => [
+                            item.innerText,
+                            item.textContent,
+                            item.getAttribute('aria-label'),
+                            item.getAttribute('title'),
+                            item.getAttribute('value'),
+                            item.getAttribute('name')
+                          ].filter(Boolean).join(' ')).join(' | ');
+                        }"""
+                    )
+                except Exception:
+                    form_targets = ""
+                if _high_impact_target(str(form_targets or "")):
+                    return {
+                        "blocked": True,
+                        "reason": "This form contains a consequential action (payment, purchase, transfer, deletion, or irreversible submission). Ask the user to perform that final action themselves.",
+                    }
             await locator.press(key, timeout=8000)
             await session.page.wait_for_timeout(150)
             return await self._status_unlocked(session_id, session)
