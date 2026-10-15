@@ -210,18 +210,21 @@ class BrowserPool:
         async with session.lock:
             await session.page.goto(normalized, wait_until="domcontentloaded", timeout=25000)
             await session.page.wait_for_timeout(150)
-            return await self.status(session_id)
+            return await self._status_unlocked(session_id, session)
+
+    async def _status_unlocked(self, session_id: str, session: BrowserSession) -> dict[str, Any]:
+        return {
+            "session_id": session_id,
+            "url": session.page.url,
+            "title": await session.page.title(),
+            "closed": session.page.is_closed(),
+            "last_used_at": session.last_used_at,
+        }
 
     async def status(self, session_id: str) -> dict[str, Any]:
         session = self.get(session_id)
         async with session.lock:
-            return {
-                "session_id": session_id,
-                "url": session.page.url,
-                "title": await session.page.title(),
-                "closed": session.page.is_closed(),
-                "last_used_at": session.last_used_at,
-            }
+            return await self._status_unlocked(session_id, session)
 
     async def snapshot(self, session_id: str) -> dict[str, Any]:
         session = self.get(session_id)
@@ -302,7 +305,7 @@ class BrowserPool:
             locator = await self._locator(session.page, target, "click")
             await locator.click(timeout=8000)
             await session.page.wait_for_timeout(250)
-            return await self.status(session_id)
+            return await self._status_unlocked(session_id, session)
 
     async def fill(self, session_id: str, target: str, value: str) -> dict[str, Any]:
         if len(value) > 5000:
@@ -327,20 +330,20 @@ class BrowserPool:
             locator = await self._locator(session.page, target, "press")
             await locator.press(key, timeout=8000)
             await session.page.wait_for_timeout(150)
-            return await self.status(session_id)
+            return await self._status_unlocked(session_id, session)
 
     async def back(self, session_id: str) -> dict[str, Any]:
         session = self.get(session_id)
         async with session.lock:
             await session.page.go_back(wait_until="domcontentloaded", timeout=15000)
-            return await self.status(session_id)
+            return await self._status_unlocked(session_id, session)
 
     async def wait(self, session_id: str, seconds: float) -> dict[str, Any]:
         session = self.get(session_id)
         seconds = max(0.1, min(float(seconds), 10))
         async with session.lock:
             await session.page.wait_for_timeout(int(seconds * 1000))
-            return await self.status(session_id)
+            return await self._status_unlocked(session_id, session)
 
     async def screenshot(self, session_id: str) -> bytes:
         session = self.get(session_id)
