@@ -1,7 +1,15 @@
 import pytest
 from starlette.testclient import TestClient
 
-from server import (\n    LLM_TOOLS,\n    app,\n    _high_impact_target,\n    validate_fetch_limit,\n    validate_public_url,\n    validate_search_limit,\n    validate_search_query,\n)
+from server import (
+    LLM_TOOLS,
+    app,
+    _high_impact_target,
+    validate_fetch_limit,
+    validate_public_url,
+    validate_search_limit,
+    validate_search_query,
+)
 
 
 def test_accepts_public_http_urls():
