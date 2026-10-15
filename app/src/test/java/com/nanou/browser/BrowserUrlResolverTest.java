@@ -61,4 +61,12 @@ public class BrowserUrlResolverTest {
         assertEquals(BrowserUrlResolver.SEARCH_BASE + "localhost%3A99999",
                 BrowserUrlResolver.resolve("localhost:99999"));
     }
+
+    @Test public void recognizesBareDomainsWithPorts() {
+        assertEquals("https://example.com:443", BrowserUrlResolver.resolve("example.com:443"));
+        assertEquals("https://example.com:8443/path?q=1",
+                BrowserUrlResolver.resolve("example.com:8443/path?q=1"));
+        assertEquals(BrowserUrlResolver.SEARCH_BASE + "example.com%3A99999",
+                BrowserUrlResolver.resolve("example.com:99999"));
+    }
 }

@@ -25,11 +25,12 @@ public final class BrowserUrlResolver {
             String candidate = "http://" + input;
             if (isWebUrl(candidate)) return candidate;
         }
-        if (hasScheme(input)) return isWebUrl(input) ? input : search(input);
+        // Test bare host:port before treating the colon as a URI scheme.
         if (HOST_LIKE.matcher(input).matches()) {
             String candidate = "https://" + input;
             if (isWebUrl(candidate)) return candidate;
         }
+        if (hasScheme(input)) return isWebUrl(input) ? input : search(input);
         return search(input);
     }
 
