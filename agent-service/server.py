@@ -135,16 +135,31 @@ class BrowserPool:
         self._browser: Browser | None = None
         self._sessions: dict[str, BrowserSession] = {}
         self._browser_lock = asyncio.Lock()
+        self._using_cdp = False
 
     async def _ensure_browser(self) -> Browser:
         async with self._browser_lock:
             if self._browser is not None and self._browser.is_connected():
                 return self._browser
+            if self._playwright is not None:
+                try:
+                    await self._playwright.stop()
+                except Exception:
+                    pass
             self._playwright = await async_playwright().start()
-            self._browser = await self._playwright.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-dev-shm-usage"],
-            )
+            cdp_url = os.environ.get("NANOU_BROWSER_CDP_URL", "").strip()
+            if cdp_url:
+                self._browser = await self._playwright.chromium.connect_over_cdp(
+                    validate_local_cdp_url(cdp_url),
+                    timeout=10000,
+                )
+                self._using_cdp = True
+            else:
+                self._browser = await self._playwright.chromium.launch(
+                    headless=True,
+                    args=["--no-sandbox", "--disable-dev-shm-usage"],
+                )
+                self._using_cdp = False
             return self._browser
 
     async def _guard_route(self, route: Any) -> None:
@@ -408,7 +423,7 @@ class BrowserPool:
     async def close_all(self) -> None:
         for session_id in list(self._sessions):
             await self.close(session_id)
-        if self._browser and self._browser.is_connected():
+        if self._browser and self._browser.is_connected() and not self._using_cdp:
             try:
                 await self._browser.close()
             except Exception:
@@ -420,9 +435,35 @@ class BrowserPool:
                 pass
         self._browser = None
         self._playwright = None
+        self._using_cdp = False
 
 
 pool = BrowserPool()
+
+
+def validate_local_cdp_url(url: str) -> str:
+    """Allow only a loopback HTTP CDP endpoint; never attach to a remote debug port."""
+    if not isinstance(url, str) or len(url) > 512:
+        raise ValueError("NANOU_BROWSER_CDP_URL must be a local HTTP CDP URL.")
+    parts = urlsplit(url.strip())
+    host = (parts.hostname or "").lower().rstrip(".")
+    if (
+        parts.scheme.lower() != "http"
+        or host not in {"127.0.0.1", "localhost", "::1"}
+        or parts.username
+        or parts.password
+        or parts.path not in ("", "/")
+        or parts.query
+        or parts.fragment
+    ):
+        raise ValueError("CDP connection is restricted to http://127.0.0.1, localhost, or ::1.")
+    try:
+        port = parts.port
+    except ValueError as exc:
+        raise ValueError("NANOU_BROWSER_CDP_URL has an invalid port.") from exc
+    if port is None or not 1 <= port <= 65535:
+        raise ValueError("NANOU_BROWSER_CDP_URL must specify a valid local port.")
+    return f"http://{host}:{port}"
 
 
 def validate_search_query(query: str) -> str:
