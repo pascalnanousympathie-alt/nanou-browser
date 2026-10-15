@@ -6,6 +6,7 @@ from server import (
     app,
     _high_impact_target,
     validate_fetch_limit,
+    validate_fetch_urls,
     validate_public_url,
     validate_search_limit,
     validate_search_query,
@@ -205,3 +206,24 @@ def test_autonomous_runner_has_search_and_fetch_tools():
         for tool in LLM_TOOLS
     }
     assert {"search", "fetch", "navigate", "snapshot", "click", "fill"} <= names
+
+
+@pytest.mark.parametrize(
+    "urls",
+    [
+        [],
+        ["https://example.com"] * 11,
+        "https://example.com",
+        ["file:///etc/passwd"],
+        ["http://127.0.0.1"],
+        ["https://user:pass@example.com"],
+    ],
+)
+def test_fetch_many_rejects_invalid_url_lists(urls):
+    with pytest.raises(ValueError):
+        validate_fetch_urls(urls)
+
+
+def test_fetch_many_accepts_one_to_ten_public_http_urls():
+    urls = ["https://example.com", "https://example.org/path"]
+    assert validate_fetch_urls(urls) == urls
