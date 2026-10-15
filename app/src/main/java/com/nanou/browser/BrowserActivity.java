@@ -439,15 +439,24 @@ public final class BrowserActivity extends Activity {
         if (crashedView.getParent() instanceof ViewGroup) {
             ((ViewGroup) crashedView.getParent()).removeView(crashedView);
         }
-        try { crashedView.destroy(); } catch (Throwable ignored) {}
+        try {
+            crashedView.stopLoading();
+            crashedView.destroy();
+        } catch (Throwable ignored) {}
         tab.webView = createWebView(tab);
         pageHost.addView(tab.webView, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         tab.webView.setVisibility(wasActive ? View.VISIBLE : View.GONE);
-        if (wasActive) {
-            toast("Niverina ny pejy rehefa nijanona ny renderer.");
+
+        // Restore the last committed address for background tabs too. Otherwise a
+        // renderer crash replaces the WebView with an empty one that stays blank
+        // when the user switches back to that tab.
+        if (BrowserUrlResolver.isHomeUrl(tab.url) || !BrowserUrlResolver.isWebUrl(tab.url)) {
             loadHome(tab);
+        } else {
+            loadUrl(tab, tab.url);
         }
+        if (wasActive) toast("Niverina ny pejy rehefa nijanona ny renderer.");
     }
 
     private void selectTab(BrowserTab tab) {
