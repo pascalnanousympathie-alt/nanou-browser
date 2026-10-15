@@ -91,8 +91,10 @@ async def _host_is_public(host: str) -> bool:
 
     now = time.monotonic()
     cached = HOST_CACHE.get(host)
-    if cached and cached[0] > now:
-        return cached[1]
+    # Cache recent failures only. Never cache a successful public-DNS decision:
+    # resolving on every request narrows the DNS-rebinding window.
+    if cached and cached[0] > now and not cached[1]:
+        return False
 
     try:
         infos = await asyncio.wait_for(
@@ -103,7 +105,10 @@ async def _host_is_public(host: str) -> bool:
         is_public = bool(addresses) and all(address.is_global for address in addresses)
     except (OSError, ValueError, asyncio.TimeoutError):
         is_public = False
-    HOST_CACHE[host] = (now + 60, is_public)
+    if is_public:
+        HOST_CACHE.pop(host, None)
+    else:
+        HOST_CACHE[host] = (now + 5, False)
     return is_public
 
 
