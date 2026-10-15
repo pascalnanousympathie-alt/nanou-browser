@@ -1,7 +1,7 @@
 import pytest
 from starlette.testclient import TestClient
 
-from server import app, _high_impact_target, validate_public_url
+from server import (\n    LLM_TOOLS,\n    app,\n    _high_impact_target,\n    validate_fetch_limit,\n    validate_public_url,\n    validate_search_limit,\n    validate_search_query,\n)
 
 
 def test_accepts_public_http_urls():
@@ -158,3 +158,42 @@ def test_press_blocks_enter_when_form_contains_high_impact_submit(monkeypatch):
 
     assert result["blocked"] is True
     assert "consequential action" in result["reason"]
+
+
+
+def test_search_query_is_trimmed_and_bounded():
+    assert validate_search_query("  Madagascar news  ") == "Madagascar news"
+    with pytest.raises(ValueError):
+        validate_search_query("   ")
+    with pytest.raises(ValueError):
+        validate_search_query("x" * 501)
+
+
+@pytest.mark.parametrize("value", [0, 11, True, "5"])
+def test_search_result_limit_rejects_invalid_values(value):
+    with pytest.raises(ValueError):
+        validate_search_limit(value)
+
+
+def test_search_result_limit_accepts_supported_values():
+    assert validate_search_limit(1) == 1
+    assert validate_search_limit(10) == 10
+
+
+@pytest.mark.parametrize("value", [499, 12001, True, "12000"])
+def test_fetch_text_limit_rejects_invalid_values(value):
+    with pytest.raises(ValueError):
+        validate_fetch_limit(value)
+
+
+def test_fetch_text_limit_accepts_supported_values():
+    assert validate_fetch_limit(500) == 500
+    assert validate_fetch_limit(12000) == 12000
+
+
+def test_autonomous_runner_has_search_and_fetch_tools():
+    names = {
+        tool["function"]["name"]
+        for tool in LLM_TOOLS
+    }
+    assert {"search", "fetch", "navigate", "snapshot", "click", "fill"} <= names
