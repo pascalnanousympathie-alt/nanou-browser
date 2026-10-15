@@ -5,8 +5,9 @@ This is a separate cloud service in the Nanou Browser repository. It does not ch
 ## Capabilities
 
 - Creates isolated Playwright Chromium sessions and returns session IDs.
+- Searches the public web and returns linked results/snippets; fetches public pages through Chromium and returns the title, visible text, and extracted links.
 - Exposes navigation, snapshot, click, form fill, keyboard, wait, back, screenshot, and session-close tools over MCP.
-- Includes an optional autonomous task runner that uses an OpenAI-compatible model endpoint. ChatGPT can also orchestrate the primitive browser tools without configuring a second model key.
+- Includes an optional autonomous task runner that can use search/fetch plus browser controls through an OpenAI-compatible model endpoint. ChatGPT can also orchestrate MCP tools without configuring a second model key.
 - Runs asynchronous jobs with run IDs and status/result polling.
 - Blocks non-HTTP(S) navigation and private/local IP destinations, requires bearer authentication for every control endpoint, and stops before high-impact actions such as payments, purchases, deleting accounts, or submitting irreversible forms.
 
