@@ -374,9 +374,16 @@ class BrowserPool:
                 try:
                     form_targets = await locator.evaluate(
                         """el => {
+                          const label = [
+                            el.innerText,
+                            el.textContent,
+                            el.getAttribute('aria-label'),
+                            el.getAttribute('title'),
+                            el.getAttribute('value'),
+                            el.getAttribute('name')
+                          ].filter(Boolean).join(' ');
                           const form = el.closest('form');
-                          if (!form) return '';
-                          return Array.from(form.querySelectorAll(
+                          const submitTargets = form ? Array.from(form.querySelectorAll(
                             'button,input[type="submit"],input[type="button"],[role="button"]'
                           )).map(item => [
                             item.innerText,
@@ -385,7 +392,8 @@ class BrowserPool:
                             item.getAttribute('title'),
                             item.getAttribute('value'),
                             item.getAttribute('name')
-                          ].filter(Boolean).join(' ')).join(' | ');
+                          ].filter(Boolean).join(' ')) : [];
+                          return [label, ...submitTargets].filter(Boolean).join(' | ');
                         }"""
                     )
                 except Exception:
