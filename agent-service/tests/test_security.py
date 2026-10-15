@@ -86,3 +86,39 @@ def test_mcp_control_endpoint_rejects_wrong_bearer_token(monkeypatch):
         )
         assert response.status_code == 401
         assert response.headers["www-authenticate"] == "Bearer"
+
+
+def test_click_blocks_high_impact_element_even_when_css_selector_hides_label(monkeypatch):
+    import asyncio
+
+    from server import pool
+
+    class FakePage:
+        async def wait_for_timeout(self, _milliseconds):
+            return None
+
+    class FakeLocator:
+        async def evaluate(self, _script):
+            return "Pay now"
+
+        async def click(self, **_kwargs):
+            pytest.fail("A consequential button must not be clicked.")
+
+    class FakeSession:
+        def __init__(self):
+            self.lock = asyncio.Lock()
+            self.page = FakePage()
+
+    session = FakeSession()
+    locator = FakeLocator()
+
+    async def fake_locator(_page, _target, _action):
+        return locator
+
+    monkeypatch.setattr(pool, "get", lambda _session_id: session)
+    monkeypatch.setattr(pool, "_locator", fake_locator)
+
+    result = asyncio.run(pool.click("test-session", "css:button.primary"))
+
+    assert result["blocked"] is True
+    assert "consequential action" in result["reason"]
