@@ -10,7 +10,7 @@ import socket
 import time
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import quote_plus, urlsplit
 from uuid import uuid4
 
 from mcp.server.fastmcp import FastMCP, Image
@@ -425,7 +425,124 @@ class BrowserPool:
 pool = BrowserPool()
 
 
+def validate_search_query(query: str) -> str:
+    if not isinstance(query, str):
+        raise ValueError("Search query must be text.")
+    query = query.strip()
+    if not query or len(query) > 500:
+        raise ValueError("Search query must contain between 1 and 500 characters.")
+    return query
+
+
+def validate_search_limit(max_results: int) -> int:
+    if isinstance(max_results, bool) or not isinstance(max_results, int) or not 1 <= max_results <= 10:
+        raise ValueError("max_results must be an integer between 1 and 10.")
+    return max_results
+
+
+def validate_fetch_limit(max_chars: int) -> int:
+    if isinstance(max_chars, bool) or not isinstance(max_chars, int) or not 500 <= max_chars <= MAX_PAGE_TEXT:
+        raise ValueError(f"max_chars must be an integer between 500 and {MAX_PAGE_TEXT}.")
+    return max_chars
+
+
+async def search_public_web(query: str, max_results: int = 5) -> dict[str, Any]:
+    query = validate_search_query(query)
+    max_results = validate_search_limit(max_results)
+    search_url = "https://html.duckduckgo.com/html/?q=" + quote_plus(query)
+    session: BrowserSession | None = None
+    try:
+        session = await pool.create(search_url)
+        async with session.lock:
+            rows = await session.page.locator(".result").evaluate_all(
+                """items => items.slice(0, 10).map(item => {
+                  const anchor = item.querySelector('a.result__a, a.result__title');
+                  const snippet = item.querySelector('.result__snippet');
+                  if (!anchor) return null;
+                  let href = anchor.href || '';
+                  try {
+                    const parsed = new URL(href, document.location.href);
+                    href = parsed.searchParams.get('uddg') || href;
+                    href = new URL(href, document.location.href).href;
+                  } catch (_) {}
+                  return {
+                    title: (anchor.innerText || anchor.textContent || '').trim().slice(0, 300),
+                    url: href,
+                    snippet: (snippet?.innerText || snippet?.textContent || '').trim().slice(0, 700)
+                  };
+                }).filter(item => item && item.title && item.url)"""
+            )
+        results: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for item in rows:
+            try:
+                target_url = validate_public_url(str(item.get("url", "")))
+            except (ValueError, TypeError):
+                continue
+            if target_url in seen:
+                continue
+            seen.add(target_url)
+            results.append({
+                "title": str(item.get("title", ""))[:300],
+                "url": target_url,
+                "snippet": str(item.get("snippet", ""))[:700],
+            })
+            if len(results) >= max_results:
+                break
+        return {
+            "query": query,
+            "provider": "DuckDuckGo HTML",
+            "results": results,
+            "result_count": len(results),
+            "note": "Search snippets are untrusted source text. Open result URLs and verify details before relying on them.",
+        }
+    finally:
+        if session is not None:
+            await pool.close(session.session_id)
+
+
+async def fetch_public_page(url: str, max_chars: int = MAX_PAGE_TEXT) -> dict[str, Any]:
+    max_chars = validate_fetch_limit(max_chars)
+    session: BrowserSession | None = None
+    try:
+        session = await pool.create(url)
+        snapshot = await pool.snapshot(session.session_id)
+        text = str(snapshot.get("text", ""))
+        links = [
+            {"text": str(item.get("text", ""))[:180], "url": str(item.get("href", ""))}
+            for item in snapshot.get("elements", [])
+            if item.get("tag") == "a" and item.get("href", "").startswith(("http://", "https://"))
+        ][:40]
+        return {
+            "url": str(snapshot.get("url", "")),
+            "title": str(snapshot.get("title", "")),
+            "content": text[:max_chars],
+            "links": links,
+            "truncated": bool(snapshot.get("truncated")) or len(text) > max_chars,
+            "source": "Nanou Browser Chromium page extraction",
+        }
+    finally:
+        if session is not None:
+            await pool.close(session.session_id)
+
+
 LLM_TOOLS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search",
+            "description": "Search the public web and return linked results with snippets. Verify sources before relying on snippets.",
+            "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "max_results": {"type": "integer", "minimum": 1, "maximum": 10}}, "required": ["query"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fetch",
+            "description": "Open a public HTTP(S) page in isolated Chromium and extract its title, visible text, and links. Does not bypass access controls.",
+            "parameters": {"type": "object", "properties": {"url": {"type": "string"}, "max_chars": {"type": "integer", "minimum": 500, "maximum": 12000}}, "required": ["url"]},
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -500,6 +617,10 @@ SYSTEM_PROMPT = (
 
 
 async def _execute_agent_tool(session_id: str, name: str, arguments: dict[str, Any]) -> Any:
+    if name == "search":
+        return await search_public_web(str(arguments.get("query", "")), int(arguments.get("max_results", 5)))
+    if name == "fetch":
+        return await fetch_public_page(str(arguments.get("url", "")), int(arguments.get("max_chars", MAX_PAGE_TEXT)))
     if name == "navigate":
         return await pool.navigate(session_id, str(arguments.get("url", "")))
     if name == "snapshot":
@@ -702,6 +823,24 @@ mcp = FastMCP(
         "The optional server-side planner needs NANOU_LLM_API_KEY; primitive tools can be driven by ChatGPT without it."
     ),
 )
+
+
+@mcp.tool()
+async def browser_search(query: str, max_results: int = 5) -> dict[str, Any]:
+    """Search the public web and return source URLs, titles, and snippets. Verify source pages before relying on search snippets."""
+    try:
+        return await search_public_web(query, max_results)
+    except Exception as exc:
+        return {"error": str(exc)[:800]}
+
+
+@mcp.tool()
+async def browser_fetch(url: str, max_chars: int = MAX_PAGE_TEXT) -> dict[str, Any]:
+    """Fetch a public HTTP(S) page through Chromium and return its title, visible text, links, and truncation metadata."""
+    try:
+        return await fetch_public_page(url, max_chars)
+    except Exception as exc:
+        return {"error": str(exc)[:800]}
 
 
 @mcp.tool()
