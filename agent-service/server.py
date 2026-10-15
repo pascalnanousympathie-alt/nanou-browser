@@ -146,6 +146,9 @@ class BrowserPool:
         async with self._browser_lock:
             if self._browser is not None and self._browser.is_connected():
                 return self._browser
+            if self._browser is not None:
+                # A disconnected browser invalidates every context/session ID.
+                self._sessions.clear()
             if self._playwright is not None:
                 try:
                     await self._playwright.stop()
