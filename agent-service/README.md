@@ -18,6 +18,7 @@ This is a separate cloud service in the Nanou Browser repository. It does not ch
 - `NANOU_LLM_BASE_URL` — optional OpenAI-compatible base URL; defaults to `https://api.deepseek.com`.
 - `NANOU_LLM_MODEL` — optional model name; defaults to `deepseek-chat`.
 - `NANOU_MAX_CONCURRENT_RUNS` — optional asynchronous run limit; defaults to `3`.
+- `NANOU_BROWSER_CDP_URL` — optional local Chrome/Opera DevTools endpoint for phone-based testing (for example `http://127.0.0.1:9223`). Only loopback HTTP endpoints are accepted. Never expose the browser debugging port to the network. When unset, the service launches its own Chromium.
 
 The public `/` page and `/healthz` probe expose no secrets. The page keeps the bearer token in memory only and sends it in the Authorization header; it does not write it to local storage.
 
@@ -28,6 +29,8 @@ python -m venv .venv
 . .venv/bin/activate
 pip install -r agent-service/requirements.txt
 playwright install chromium
+# Optional for an already-running local Chromium/Opera with loopback CDP enabled:
+# export NANOU_BROWSER_CDP_URL='http://127.0.0.1:9223'
 export NANOU_AGENT_API_KEY='set-a-long-random-token'
 uvicorn server:app --app-dir agent-service --host 127.0.0.1 --port 8080
 ```
