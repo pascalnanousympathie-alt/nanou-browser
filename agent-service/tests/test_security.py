@@ -10,6 +10,7 @@ from server import (
     validate_fetch_urls,
     validate_public_url,
     validate_search_limit,
+    validate_search_options,
     validate_search_query,
 )
 
@@ -257,3 +258,22 @@ def test_cdp_url_accepts_loopback_only():
 def test_autonomous_runner_exposes_batch_fetch():
     names = {tool["function"]["name"] for tool in LLM_TOOLS}
     assert "fetch_many" in names
+
+
+@pytest.mark.parametrize(
+    ("recency", "category"),
+    [
+        ("minute", "web"),
+        ("any", "social"),
+        ("", "news"),
+        ("year", ""),
+    ],
+)
+def test_search_options_reject_unsupported_filters(recency, category):
+    with pytest.raises(ValueError):
+        validate_search_options(recency, category)
+
+
+def test_search_options_normalize_recency_and_category():
+    assert validate_search_options(" WEEK ", "News") == ("week", "news")
+    assert validate_search_options("any", "research") == ("any", "research")
