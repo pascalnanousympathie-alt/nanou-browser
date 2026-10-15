@@ -1,0 +1,41 @@
+name: Nanou Browser Agent Service CI
+
+on:
+  push:
+    branches:
+      - feat/cloud-browser-agent-mcp
+    paths:
+      - "agent-service/**"
+      - "Dockerfile"
+      - ".github/workflows/agent-service-ci.yml"
+  pull_request:
+    paths:
+      - "agent-service/**"
+      - "Dockerfile"
+      - ".github/workflows/agent-service-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nanou-browser-agent-ci
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: agent-service/requirements.txt
+      - name: Install service dependencies
+        run: pip install -r agent-service/requirements.txt
+      - name: Run safety and API tests
+        env:
+          PYTHONPATH: agent-service
+        run: pytest -q agent-service/tests
