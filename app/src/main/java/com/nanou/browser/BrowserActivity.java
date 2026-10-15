@@ -86,8 +86,10 @@ public final class BrowserActivity extends Activity {
         int id;
         WebView webView;
         String url = BrowserUrlResolver.HOME_URL;
+        String lastCommittedUrl = BrowserUrlResolver.HOME_URL;
         String title = "Nanou Browser";
         boolean loading;
+        boolean mainFrameFailed;
     }
 
     @Override
@@ -340,6 +342,7 @@ public final class BrowserActivity extends Activity {
             @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 tab.loading = true;
+                tab.mainFrameFailed = false;
                 if (BrowserUrlResolver.isHomeUrl(url)) {
                     tab.url = BrowserUrlResolver.HOME_URL;
                     tab.title = "Nanou Browser";
@@ -360,8 +363,10 @@ public final class BrowserActivity extends Activity {
                 if (BrowserUrlResolver.isHomeUrl(url)) {
                     tab.url = BrowserUrlResolver.HOME_URL;
                     tab.title = "Nanou Browser";
+                    if (!tab.mainFrameFailed) tab.lastCommittedUrl = BrowserUrlResolver.HOME_URL;
                 } else if (BrowserUrlResolver.isWebUrl(url)) {
                     tab.url = url;
+                    if (!tab.mainFrameFailed) tab.lastCommittedUrl = url;
                     String pageTitle = view.getTitle();
                     tab.title = pageTitle != null && !pageTitle.trim().isEmpty()
                             ? pageTitle.trim() : hostLabel(url);
@@ -376,9 +381,12 @@ public final class BrowserActivity extends Activity {
             }
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (request.isForMainFrame() && tab == activeTab) {
-                    progressBar.setVisibility(View.GONE);
-                    statusText.setText("Tsy tafiditra ny pejy. Jereo ny tambajotra na ny adiresy.");
+                if (request.isForMainFrame()) {
+                    tab.mainFrameFailed = true;
+                    if (tab == activeTab) {
+                        progressBar.setVisibility(View.GONE);
+                        statusText.setText("Tsy tafiditra ny pejy. Jereo ny tambajotra na ny adiresy.");
+                    }
                 }
             }
             @Override
@@ -451,10 +459,11 @@ public final class BrowserActivity extends Activity {
         // Restore the last committed address for background tabs too. Otherwise a
         // renderer crash replaces the WebView with an empty one that stays blank
         // when the user switches back to that tab.
-        if (BrowserUrlResolver.isHomeUrl(tab.url) || !BrowserUrlResolver.isWebUrl(tab.url)) {
+        if (BrowserUrlResolver.isHomeUrl(tab.lastCommittedUrl)
+                || !BrowserUrlResolver.isWebUrl(tab.lastCommittedUrl)) {
             loadHome(tab);
         } else {
-            loadUrl(tab, tab.url);
+            loadUrl(tab, tab.lastCommittedUrl);
         }
         if (wasActive) toast("Niverina ny pejy rehefa nijanona ny renderer.");
     }
@@ -546,6 +555,8 @@ public final class BrowserActivity extends Activity {
 
     private void loadHome(BrowserTab tab) {
         tab.url = BrowserUrlResolver.HOME_URL;
+        tab.lastCommittedUrl = BrowserUrlResolver.HOME_URL;
+        tab.mainFrameFailed = false;
         tab.title = "Nanou Browser";
         tab.loading = false;
         tab.webView.loadDataWithBaseURL("https://nanou.browser/", homeHtml(),
