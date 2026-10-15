@@ -526,6 +526,36 @@ async def fetch_public_page(url: str, max_chars: int = MAX_PAGE_TEXT) -> dict[st
             await pool.close(session.session_id)
 
 
+def validate_fetch_urls(urls: list[str]) -> list[str]:
+    if not isinstance(urls, list) or not 1 <= len(urls) <= 10:
+        raise ValueError("urls must be a list containing between 1 and 10 URLs.")
+    validated: list[str] = []
+    for url in urls:
+        validated.append(validate_public_url(url))
+    return validated
+
+
+async def fetch_public_pages(urls: list[str], max_chars: int = MAX_PAGE_TEXT) -> dict[str, Any]:
+    urls = validate_fetch_urls(urls)
+    max_chars = validate_fetch_limit(max_chars)
+    limiter = asyncio.Semaphore(3)
+
+    async def one(url: str) -> dict[str, Any]:
+        async with limiter:
+            try:
+                return await fetch_public_page(url, max_chars)
+            except Exception as exc:
+                return {"url": url, "error": str(exc)[:500]}
+
+    pages = await asyncio.gather(*(one(url) for url in urls))
+    return {
+        "requested_count": len(urls),
+        "success_count": sum(1 for page in pages if "error" not in page),
+        "pages": pages,
+        "source": "Nanou Browser Chromium page extraction",
+    }
+
+
 LLM_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
@@ -541,6 +571,14 @@ LLM_TOOLS: list[dict[str, Any]] = [
             "name": "fetch",
             "description": "Open a public HTTP(S) page in isolated Chromium and extract its title, visible text, and links. Does not bypass access controls.",
             "parameters": {"type": "object", "properties": {"url": {"type": "string"}, "max_chars": {"type": "integer", "minimum": 500, "maximum": 12000}}, "required": ["url"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "fetch_many",
+            "description": "Fetch 1 to 10 public HTTP(S) pages concurrently, returning independent text/link results for each URL.",
+            "parameters": {"type": "object", "properties": {"urls": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 10}, "max_chars": {"type": "integer", "minimum": 500, "maximum": 12000}}, "required": ["urls"]},
         },
     },
     {
@@ -621,6 +659,11 @@ async def _execute_agent_tool(session_id: str, name: str, arguments: dict[str, A
         return await search_public_web(str(arguments.get("query", "")), int(arguments.get("max_results", 5)))
     if name == "fetch":
         return await fetch_public_page(str(arguments.get("url", "")), int(arguments.get("max_chars", MAX_PAGE_TEXT)))
+    if name == "fetch_many":
+        raw_urls = arguments.get("urls", [])
+        if not isinstance(raw_urls, list):
+            raise ValueError("urls must be a JSON list.")
+        return await fetch_public_pages([str(url) for url in raw_urls], int(arguments.get("max_chars", MAX_PAGE_TEXT)))
     if name == "navigate":
         return await pool.navigate(session_id, str(arguments.get("url", "")))
     if name == "snapshot":
@@ -839,6 +882,15 @@ async def browser_fetch(url: str, max_chars: int = MAX_PAGE_TEXT) -> dict[str, A
     """Fetch a public HTTP(S) page through Chromium and return its title, visible text, links, and truncation metadata."""
     try:
         return await fetch_public_page(url, max_chars)
+    except Exception as exc:
+        return {"error": str(exc)[:800]}
+
+
+@mcp.tool()
+async def browser_fetch_many(urls: list[str], max_chars: int = MAX_PAGE_TEXT) -> dict[str, Any]:
+    """Fetch up to ten public HTTP(S) pages concurrently. Each URL is isolated and independently reports errors."""
+    try:
+        return await fetch_public_pages(urls, max_chars)
     except Exception as exc:
         return {"error": str(exc)[:800]}
 
