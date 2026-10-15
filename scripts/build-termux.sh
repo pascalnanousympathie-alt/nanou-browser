@@ -26,7 +26,7 @@ if [[ -n "${PREFIX:-}" && "$PREFIX" == */com.termux/files/usr ]]; then
   fi
   GRADLE_COMMAND+=("-Pandroid.aapt2FromMavenOverride=$AAPT2_WRAPPER")
 elif [[ -x "$AAPT2_WRAPPER" ]]; then
-  GRADLE_ARGS+=("-Pandroid.aapt2FromMavenOverride=$AAPT2_WRAPPER")
+  GRADLE_COMMAND+=("-Pandroid.aapt2FromMavenOverride=$AAPT2_WRAPPER")
 fi
 
 export ANDROID_HOME="$SDK_ROOT"
