@@ -11,7 +11,7 @@ public final class BrowserUrlResolver {
     public static final String HOME_URL = "nanou://home";
     public static final String SEARCH_BASE = "https://duckduckgo.com/?q=";
     private static final Pattern HOST_LIKE = Pattern.compile(
-            "^(?i)(localhost|(?:[a-z0-9-]+\\.)+[a-z]{2,63}|(?:[0-9]{1,3}\\.){3}[0-9]{1,3})(?::[0-9]{1,5})?(?:[/?#].*)?$"
+            "^(?i)(localhost|(?:[a-z0-9-]+\\.)+[a-z]{2,63}|(?:[0-9]{1,3}\\.){3}[0-9]{1,3}|\\[[0-9a-f:.]+\\])(?::[0-9]{1,5})?(?:[/?#].*)?$"
     );
 
     private BrowserUrlResolver() {}

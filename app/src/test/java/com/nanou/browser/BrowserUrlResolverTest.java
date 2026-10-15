@@ -69,4 +69,15 @@ public class BrowserUrlResolverTest {
         assertEquals(BrowserUrlResolver.SEARCH_BASE + "example.com%3A99999",
                 BrowserUrlResolver.resolve("example.com:99999"));
     }
+
+    @Test public void recognizesBracketedIpv6Hosts() {
+        assertEquals("https://[::1]", BrowserUrlResolver.resolve("[::1]"));
+        assertEquals("https://[::1]:8080/health?ok=1",
+                BrowserUrlResolver.resolve("[::1]:8080/health?ok=1"));
+        assertEquals("https://[2001:db8::1]:8443", BrowserUrlResolver.resolve("[2001:db8::1]:8443"));
+        assertEquals(BrowserUrlResolver.SEARCH_BASE + "%5B%3A%3A1%5D%3A99999",
+                BrowserUrlResolver.resolve("[::1]:99999"));
+        assertEquals(BrowserUrlResolver.SEARCH_BASE + "%5Binvalid%5D",
+                BrowserUrlResolver.resolve("[invalid]"));
+    }
 }
