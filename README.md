@@ -24,12 +24,19 @@ The debug APK is produced at:
 
 ### Build directly on Termux
 
-This is the independent build path when GitHub-hosted Actions cannot start. On the Android phone, install Java 17+ and Android SDK Platform 35 / Build Tools 35.0.0, clone this repository, then run:
+This is the independent build path when GitHub-hosted Actions cannot start. On the Android phone, install Java 17+ and Android SDK Platform 35 / Build Tools 35.0.0.
+
+For an **existing clone**, get the current Nanou Browser fix branch before building:
 
 ```bash
-chmod +x gradlew scripts/build-termux.sh
-./scripts/build-termux.sh
+cd ~/nanou-browser
+git fetch origin fix/navigation-and-low-memory-build
+git checkout fix/navigation-and-low-memory-build
+git pull --ff-only origin fix/navigation-and-low-memory-build
+bash scripts/build-termux.sh
 ```
+
+For a fresh checkout, clone the repository's `fix/navigation-and-low-memory-build` branch first, then run `bash scripts/build-termux.sh`.
 
 On Termux, the script uses `$HOME/android-sdk` by default and the compatible AAPT2 wrapper at `$HOME/.local/bin/aapt2` (override with `AAPT2_WRAPPER` if needed). It runs unit tests, builds the debug APK with one Gradle worker, validates the APK archive and signature, prints its SHA-256, and copies it to `$HOME/storage/downloads/NanouBrowser-debug.apk` when Termux storage is available. It does not alter other projects.
 
