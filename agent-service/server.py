@@ -246,41 +246,43 @@ class BrowserPool:
         async with session.lock:
             return await self._status_unlocked(session_id, session)
 
+    async def _snapshot_page(self, page: Page) -> dict[str, Any]:
+        try:
+            text = await page.locator("body").inner_text(timeout=5000)
+        except Exception:
+            text = ""
+        text = text[:MAX_PAGE_TEXT]
+        elements = await page.locator(
+            "a[href],button,input,textarea,select,[role=button],[role=link]"
+        ).evaluate_all(
+            """els => els.filter(e => {
+              const r = e.getBoundingClientRect();
+              const s = getComputedStyle(e);
+              return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
+            }).slice(0, 80).map(e => ({
+              tag: e.tagName.toLowerCase(),
+              role: e.getAttribute('role') || '',
+              text: (e.innerText || e.getAttribute('aria-label') || e.getAttribute('placeholder') || e.getAttribute('name') || '').trim().slice(0, 180),
+              type: e.getAttribute('type') || '',
+              name: e.getAttribute('name') || '',
+              placeholder: e.getAttribute('placeholder') || '',
+              href: e.tagName.toLowerCase() === 'a' ? e.href : '',
+              disabled: !!e.disabled
+            }))"""
+        )
+        return {
+            "url": page.url,
+            "title": await page.title(),
+            "text": text,
+            "elements": elements,
+            "truncated": len(text) >= MAX_PAGE_TEXT,
+        }
+
     async def snapshot(self, session_id: str) -> dict[str, Any]:
         session = self.get(session_id)
         async with session.lock:
-            page = session.page
-            try:
-                text = await page.locator("body").inner_text(timeout=5000)
-            except Exception:
-                text = ""
-            text = text[:MAX_PAGE_TEXT]
-            elements = await page.locator(
-                "a[href],button,input,textarea,select,[role=button],[role=link]"
-            ).evaluate_all(
-                """els => els.filter(e => {
-                  const r = e.getBoundingClientRect();
-                  const s = getComputedStyle(e);
-                  return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
-                }).slice(0, 80).map(e => ({
-                  tag: e.tagName.toLowerCase(),
-                  role: e.getAttribute('role') || '',
-                  text: (e.innerText || e.getAttribute('aria-label') || e.getAttribute('placeholder') || e.getAttribute('name') || '').trim().slice(0, 180),
-                  type: e.getAttribute('type') || '',
-                  name: e.getAttribute('name') || '',
-                  placeholder: e.getAttribute('placeholder') || '',
-                  href: e.tagName.toLowerCase() === 'a' ? e.href : '',
-                  disabled: !!e.disabled
-                }))"""
-            )
-            return {
-                "session_id": session_id,
-                "url": page.url,
-                "title": await page.title(),
-                "text": text,
-                "elements": elements,
-                "truncated": len(text) >= MAX_PAGE_TEXT,
-            }
+            snapshot = await self._snapshot_page(session.page)
+            return {"session_id": session_id, **snapshot}
 
     async def _locator(self, page: Page, target: str, action: str) -> Any:
         target = (target or "").strip()
@@ -575,11 +577,20 @@ async def search_public_web(
 
 
 async def fetch_public_page(url: str, max_chars: int = MAX_PAGE_TEXT) -> dict[str, Any]:
+    normalized_url = await _assert_public_url(url)
     max_chars = validate_fetch_limit(max_chars)
-    session: BrowserSession | None = None
+    browser = await pool._ensure_browser()
+    context = await browser.new_context(
+        viewport={"width": 1365, "height": 900},
+        accept_downloads=False,
+        service_workers="block",
+    )
     try:
-        session = await pool.create(url)
-        snapshot = await pool.snapshot(session.session_id)
+        await context.route("**/*", pool._guard_route)
+        page = await context.new_page()
+        await page.goto(normalized_url, wait_until="domcontentloaded", timeout=25000)
+        await page.wait_for_timeout(250)
+        snapshot = await pool._snapshot_page(page)
         text = str(snapshot.get("text", ""))
         links = [
             {"text": str(item.get("text", ""))[:180], "url": str(item.get("href", ""))}
@@ -595,8 +606,7 @@ async def fetch_public_page(url: str, max_chars: int = MAX_PAGE_TEXT) -> dict[st
             "source": "Nanou Browser Chromium page extraction",
         }
     finally:
-        if session is not None:
-            await pool.close(session.session_id)
+        await context.close()
 
 
 def validate_fetch_urls(urls: list[str]) -> list[str]:
