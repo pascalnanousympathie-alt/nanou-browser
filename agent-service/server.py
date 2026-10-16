@@ -23,7 +23,16 @@ from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
 SERVICE_NAME = "Nanou Browser Agent"
 SESSION_TTL_SECONDS = 30 * 60
-MAX_SESSIONS = 8
+
+
+def _max_sessions() -> int:
+    try:
+        return max(1, min(8, int(os.environ.get("NANOU_MAX_SESSIONS", "8"))))
+    except ValueError:
+        return 8
+
+
+MAX_SESSIONS = _max_sessions()
 MAX_PAGE_TEXT = 12000
 MAX_AGENT_STEPS = 20
 HIGH_IMPACT = re.compile(
