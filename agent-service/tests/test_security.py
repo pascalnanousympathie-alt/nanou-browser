@@ -422,3 +422,65 @@ def test_press_blocks_high_impact_link_without_form(monkeypatch):
 
     assert result["blocked"] is True
     assert "consequential action" in result["reason"]
+
+
+def test_search_uses_temporary_context_without_evicting_live_sessions(monkeypatch):
+    import server
+
+    class FakeLocator:
+        async def evaluate_all(self, _script):
+            return [
+                {
+                    "title": "Example result",
+                    "url": "https://example.org/article",
+                    "snippet": "A source snippet.",
+                },
+            ]
+
+    class FakePage:
+        async def goto(self, *_args, **_kwargs):
+            return None
+        async def wait_for_timeout(self, _milliseconds):
+            return None
+        def locator(self, _selector):
+            return FakeLocator()
+
+    class FakeContext:
+        closed = False
+        def __init__(self):
+            self.page = FakePage()
+        async def route(self, *_args, **_kwargs):
+            return None
+        async def new_page(self):
+            return self.page
+        async def close(self):
+            self.closed = True
+
+    class FakeBrowser:
+        def __init__(self, context):
+            self.context = context
+        async def new_context(self, **_kwargs):
+            return self.context
+
+    context = FakeContext()
+    browser = FakeBrowser(context)
+
+    async def fake_assert(url):
+        return url
+
+    async def fake_browser():
+        return browser
+
+    monkeypatch.setattr(server, "_assert_public_url", fake_assert)
+    monkeypatch.setattr(server.pool, "_ensure_browser", fake_browser)
+    monkeypatch.setattr(
+        server.pool,
+        "create",
+        lambda _url: pytest.fail("Search must not allocate/evict a persistent browser session."),
+    )
+
+    result = asyncio.run(server.search_public_web("test query", 3))
+
+    assert result["result_count"] == 1
+    assert result["results"][0]["url"] == "https://example.org/article"
+    assert context.closed is True
