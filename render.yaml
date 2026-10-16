@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: nanou-browser-agent
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: feat/cloud-browser-agent-mcp
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    envVars:
+      - key: NANOU_AGENT_API_KEY
+        generateValue: true
+      - key: NANOU_MAX_CONCURRENT_RUNS
+        value: "1"
