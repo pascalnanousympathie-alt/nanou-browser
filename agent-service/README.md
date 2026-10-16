@@ -46,6 +46,17 @@ Use `Authorization: Bearer $NANOU_AGENT_API_KEY` for MCP/REST calls. Connect an 
 
 The asynchronous run registry is process-local, so run IDs are lost on a process restart. Deploy a single replica until the run/session state is moved to durable shared storage. This limitation is explicit rather than pretending jobs survive restarts.
 
+## Render deployment (free preview)
+
+A Render Blueprint is provided in the repository root as `render.yaml`. To deploy this branch, create a Blueprint in Render, connect this repository, and select branch `feat/cloud-browser-agent-mcp`. The Blueprint builds the root `Dockerfile`, checks `/healthz`, generates `NANOU_AGENT_API_KEY`, and limits concurrent autonomous runs to one for the free instance.
+
+After deployment:
+- Copy the generated `NANOU_AGENT_API_KEY` from the Render service environment and store it as the bearer credential in the MCP client. Never commit it or paste it into public issues.
+- To enable the optional server-side autonomous runner, add `NANOU_LLM_API_KEY` as a secret in Render. Without this key, MCP browser primitives can still be orchestrated by an LLM client that is connected to the MCP endpoint.
+- Test `/healthz` and the authenticated `/mcp` endpoint before relying on it.
+
+**Free-tier caveats:** this is for a preview, not production. Render free web services can sleep after 15 minutes without traffic and use a 512 MB RAM instance; running Chromium may exceed that memory budget, so the service may require a larger instance for reliable live browsing. Run/session state is in memory and is lost on restarts.
+
 ## Railway deployment
 
 Deploy this repository on branch `feat/cloud-browser-agent-mcp` using the root `Dockerfile`. Add `NANOU_AGENT_API_KEY` as a Railway secret before using MCP/REST. Do not expose the value in logs, commits, screenshots, or chat. For autonomous runs, set the model variables as Railway secrets as well.
