@@ -534,28 +534,40 @@ async def search_public_web(
         search_url += "&df=" + time_filter
     if category == "news":
         search_url += "&iar=news&ia=news"
-    session: BrowserSession | None = None
+
+    # Search is a one-off operation. Give it a temporary context instead of
+    # consuming the bounded persistent session pool or evicting a user's live tab.
+    context: BrowserContext | None = None
     try:
-        session = await pool.create(search_url)
-        async with session.lock:
-            rows = await session.page.locator(".result").evaluate_all(
-                """items => items.slice(0, 10).map(item => {
-                  const anchor = item.querySelector('a.result__a, a.result__title');
-                  const snippet = item.querySelector('.result__snippet');
-                  if (!anchor) return null;
-                  let href = anchor.href || '';
-                  try {
-                    const parsed = new URL(href, document.location.href);
-                    href = parsed.searchParams.get('uddg') || href;
-                    href = new URL(href, document.location.href).href;
-                  } catch (_) {}
-                  return {
-                    title: (anchor.innerText || anchor.textContent || '').trim().slice(0, 300),
-                    url: href,
-                    snippet: (snippet?.innerText || snippet?.textContent || '').trim().slice(0, 700)
-                  };
-                }).filter(item => item && item.title && item.url)"""
-            )
+        normalized_url = await _assert_public_url(search_url)
+        browser = await pool._ensure_browser()
+        context = await browser.new_context(
+            viewport={"width": 1365, "height": 900},
+            accept_downloads=False,
+            service_workers="block",
+        )
+        await context.route("**/*", pool._guard_route)
+        page = await context.new_page()
+        await page.goto(normalized_url, wait_until="domcontentloaded", timeout=20000)
+        await page.wait_for_timeout(200)
+        rows = await page.locator(".result").evaluate_all(
+            """items => items.slice(0, 10).map(item => {
+              const anchor = item.querySelector('a.result__a, a.result__title');
+              const snippet = item.querySelector('.result__snippet');
+              if (!anchor) return null;
+              let href = anchor.href || '';
+              try {
+                const parsed = new URL(href, document.location.href);
+                href = parsed.searchParams.get('uddg') || href;
+                href = new URL(href, document.location.href).href;
+              } catch (_) {}
+              return {
+                title: (anchor.innerText || anchor.textContent || '').trim().slice(0, 300),
+                url: href,
+                snippet: (snippet?.innerText || snippet?.textContent || '').trim().slice(0, 700)
+              };
+            }).filter(item => item && item.title && item.url)"""
+        )
         results: list[dict[str, str]] = []
         seen: set[str] = set()
         for item in rows:
@@ -583,8 +595,8 @@ async def search_public_web(
             "note": "Search snippets are untrusted source text. Open result URLs and verify details before relying on them.",
         }
     finally:
-        if session is not None:
-            await pool.close(session.session_id)
+        if context is not None:
+            await context.close()
 
 
 async def fetch_public_page(url: str, max_chars: int = MAX_PAGE_TEXT) -> dict[str, Any]:
