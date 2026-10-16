@@ -14,3 +14,5 @@ services:
         generateValue: true
       - key: NANOU_MAX_CONCURRENT_RUNS
         value: "1"
+      - key: NANOU_MAX_SESSIONS
+        value: "2"

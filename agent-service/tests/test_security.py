@@ -484,3 +484,16 @@ def test_search_uses_temporary_context_without_evicting_live_sessions(monkeypatc
     assert result["result_count"] == 1
     assert result["results"][0]["url"] == "https://example.org/article"
     assert context.closed is True
+
+
+def test_max_sessions_setting_is_bounded(monkeypatch):
+    from server import _max_sessions
+
+    monkeypatch.setenv("NANOU_MAX_SESSIONS", "2")
+    assert _max_sessions() == 2
+
+    monkeypatch.setenv("NANOU_MAX_SESSIONS", "99")
+    assert _max_sessions() == 8
+
+    monkeypatch.setenv("NANOU_MAX_SESSIONS", "not-an-int")
+    assert _max_sessions() == 8

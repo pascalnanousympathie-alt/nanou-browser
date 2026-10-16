@@ -18,6 +18,7 @@ This is a separate cloud service in the Nanou Browser repository. It does not ch
 - `NANOU_LLM_BASE_URL` — optional OpenAI-compatible base URL; defaults to `https://api.deepseek.com`.
 - `NANOU_LLM_MODEL` — optional model name; defaults to `deepseek-chat`.
 - `NANOU_MAX_CONCURRENT_RUNS` — optional asynchronous run limit; defaults to `3`.
+- `NANOU_MAX_SESSIONS` — optional browser-session cap (1–8); defaults to `8`. For low-memory preview hosting, use `2`.
 - `NANOU_BROWSER_CDP_URL` — optional local Chrome/Opera DevTools endpoint for phone-based testing (for example `http://127.0.0.1:9223`). Only loopback HTTP endpoints are accepted. Never expose the browser debugging port to the network. When unset, the service launches its own Chromium.
 
 The public `/` page and `/healthz` probe expose no secrets. The page keeps the bearer token in memory only and sends it in the Authorization header; it does not write it to local storage.
@@ -48,7 +49,7 @@ The asynchronous run registry is process-local, so run IDs are lost on a process
 
 ## Render deployment (free preview)
 
-A Render Blueprint is provided in the repository root as `render.yaml`. To deploy this branch, create a Blueprint in Render, connect this repository, and select branch `feat/cloud-browser-agent-mcp`. The Blueprint builds the root `Dockerfile`, checks `/healthz`, generates `NANOU_AGENT_API_KEY`, and limits concurrent autonomous runs to one for the free instance.
+A Render Blueprint is provided in the repository root as `render.yaml`. To deploy this branch, create a Blueprint in Render, connect this repository, and select branch `feat/cloud-browser-agent-mcp`. The Blueprint builds the root `Dockerfile`, checks `/healthz`, generates `NANOU_AGENT_API_KEY`, and limits concurrent autonomous runs to one and browser contexts to two for the free instance.
 
 After deployment:
 - Copy the generated `NANOU_AGENT_API_KEY` from the Render service environment and store it as the bearer credential in the MCP client. Never commit it or paste it into public issues.
