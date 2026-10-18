@@ -2,12 +2,7 @@ name: Nanou Browser Agent Service CI
 
 on:
   push:
-    branches: [main, android-alternative]
-    paths:
-      - "agent-service/**"
-      - "Dockerfile"
-      - ".github/workflows/agent-service-ci.yml"
-  pull_request:
+    branches: [feat/cloud-browser-agent-mcp, main, android-alternative]
     paths:
       - "agent-service/**"
       - "Dockerfile"
