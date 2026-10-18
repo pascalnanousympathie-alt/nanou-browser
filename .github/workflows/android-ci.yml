@@ -10,7 +10,6 @@ on:
       - "gradle/**"
       - "gradlew"
       - "gradle.properties"
-      - ".github/workflows/android-ci.yml"
   pull_request:
     paths:
       - "app/**"
