@@ -979,6 +979,7 @@ def _json_value(value: Any) -> str:
 
 mcp = FastMCP(
     SERVICE_NAME,
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     instructions=(
         "Nanou Browser provides a real isolated Chromium session and browser action tools. "
         "Use browser_snapshot to inspect before acting and verify outcomes after changes. "
@@ -1103,7 +1104,7 @@ async def browser_back(session_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-async def browser_screenshot(session_id: str) -> Image | dict[str, str]:
+async def browser_screenshot(session_id: str) -> Any:
     """Capture a screenshot of the current browser viewport so the caller can visually inspect it."""
     try:
         return Image(data=await pool.screenshot(session_id), format="png")
@@ -1292,6 +1293,5 @@ class BearerGuard:
         await self.inner(scope, receive, send)
 
 
-transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
-mcp_app = mcp.streamable_http_app(transport_security=transport_security)
+mcp_app = mcp.streamable_http_app()
 app = BearerGuard(mcp_app)
