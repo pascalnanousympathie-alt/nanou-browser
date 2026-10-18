@@ -3,7 +3,23 @@ name: Nanou Browser Android CI
 on:
   push:
     branches: [main, android-alternative]
+    paths:
+      - "app/**"
+      - "build.gradle"
+      - "settings.gradle"
+      - "gradle/**"
+      - "gradlew"
+      - "gradle.properties"
+      - ".github/workflows/android-ci.yml"
   pull_request:
+    paths:
+      - "app/**"
+      - "build.gradle"
+      - "settings.gradle"
+      - "gradle/**"
+      - "gradlew"
+      - "gradle.properties"
+      - ".github/workflows/android-ci.yml"
   workflow_dispatch:
 
 permissions:
