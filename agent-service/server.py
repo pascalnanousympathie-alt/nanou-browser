@@ -36,9 +36,10 @@ MAX_SESSIONS = _max_sessions()
 MAX_PAGE_TEXT = 12000
 MAX_AGENT_STEPS = 20
 HIGH_IMPACT = re.compile(
-    r"\b(pay now|make payment|place order|buy now|purchase|confirm transfer|"
-    r"send money|withdraw|delete account|permanently delete|cancel subscription|"
-    r"submit order|final confirmation)\b",
+    r"\b(pay|payment|make payment|place order|buy|purchase|checkout|transfer|wire|"
+    r"send(?: money| funds| payment)?|withdraw(?:al)?|delete(?: account)?|"
+    r"permanently delete|cancel subscription|unsubscribe|submit(?: order| payment| transfer)?|"
+    r"final confirmation|confirm(?: transfer| payment| purchase| order| deletion)?|approve payment)\b",
     re.IGNORECASE,
 )
 HOST_CACHE: dict[str, tuple[float, bool]] = {}
