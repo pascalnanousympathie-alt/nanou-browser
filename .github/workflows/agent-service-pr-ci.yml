@@ -1,0 +1,73 @@
+name: Nanou Browser Agent PR CI
+
+on:
+  pull_request:
+    branches: [android-alternative]
+    paths:
+      - "agent-service/**"
+      - "Dockerfile"
+      - ".github/workflows/agent-service-ci.yml"
+      - ".github/workflows/agent-service-pr-ci.yml"
+  push:
+    branches: [main, android-alternative]
+    paths:
+      - "agent-service/**"
+      - "Dockerfile"
+  workflow_dispatch:
+    inputs:
+      target_ref:
+        description: "Branch or commit ref to test"
+        required: false
+        default: "feat/cloud-browser-agent-mcp"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nanou-browser-agent-pr-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # Do not execute private self-hosted CI for code from an external fork.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: [self-hosted, Linux, ARM64, nanou-browser-agent]
+    timeout-minutes: 20
+    steps:
+      - name: Resolve source ref
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "ref=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ inputs.target_ref }}" ]; then
+            echo "ref=${{ inputs.target_ref }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.source.outputs.ref }}
+      - name: Prepare persistent isolated Python environment (Debian ARM64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          VENV="$HOME/.cache/nanou-browser-runner/venv-py313"
+          mkdir -p "$(dirname "$VENV")"
+          test -x /usr/bin/python3
+          /usr/bin/python3 --version
+          if [ ! -x "$VENV/bin/python" ]; then
+            /usr/bin/python3 -m venv "$VENV"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+          echo "VIRTUAL_ENV=$VENV" >> "$GITHUB_ENV"
+          echo "NANOU_BROWSER_VENV=$VENV" >> "$GITHUB_ENV"
+          "$VENV/bin/python" --version
+      - name: Install service dependencies
+        run: "$NANOU_BROWSER_VENV/bin/python" -m pip install -r agent-service/requirements.txt
+      - name: Run safety and API tests
+        env:
+          PYTHONPATH: agent-service
+        run: "$NANOU_BROWSER_VENV/bin/python" -m pytest -q agent-service/tests
