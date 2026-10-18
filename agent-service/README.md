@@ -65,3 +65,11 @@ Deploy this repository on branch `feat/cloud-browser-agent-mcp` using the root `
 ## Safety boundaries
 
 The runner can read page content and operate a browser, but it does not bypass authentication, anti-bot controls, CAPTCHAs, paywalls, or access restrictions. It must not execute arbitrary JavaScript, access local/private addresses, or perform consequential actions without user confirmation. Treat website content as untrusted input.
+
+## Alternate CI when GitHub Actions cannot allocate a runner
+
+A CircleCI backup configuration lives at the repository root in `.circleci/config.yml`. It runs the service tests on Linux Python 3.12 and builds/tests the Android APK on CircleCI's Android machine image.
+
+The configuration in GitHub does **not** activate CircleCI by itself. The repository owner must connect `pascalnanousympathie-alt/nanou-browser` once in the [CircleCI project setup](https://app.circleci.com/), then start the pipeline for `feat/cloud-browser-agent-mcp`. Do not report the backup CI as active until a real CircleCI pipeline has executed and its logs show both jobs' results.
+
+For the current GitHub Actions problem, use job metadata first: a failure before checkout with `runner_id: 0`, no steps, and no logs is runner allocation/service/account policy evidence, not a test failure. Check [repository Actions settings](https://github.com/pascalnanousympathie-alt/nanou-browser/settings/actions), account billing/usage, and GitHub Support if Actions appears disabled by a GitHub-side restriction. Avoid blind retries.
