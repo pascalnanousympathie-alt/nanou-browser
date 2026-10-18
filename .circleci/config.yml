@@ -29,11 +29,14 @@ jobs:
 
   android-build:
     machine:
-      image: android:current
+      image: android:default
     resource_class: medium
     working_directory: ~/project
     steps:
       - checkout
+      - run:
+          name: Make Gradle wrapper executable
+          command: chmod +x ./gradlew
       - run:
           name: Confirm Android build tools
           command: |
