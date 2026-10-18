@@ -66,8 +66,10 @@ jobs:
           echo "NANOU_BROWSER_VENV=$VENV" >> "$GITHUB_ENV"
           "$VENV/bin/python" --version
       - name: Install service dependencies
-        run: "$NANOU_BROWSER_VENV/bin/python" -m pip install -r agent-service/requirements.txt
+        run: |
+          "$NANOU_BROWSER_VENV/bin/python" -m pip install -r agent-service/requirements.txt
       - name: Run safety and API tests
         env:
           PYTHONPATH: agent-service
-        run: "$NANOU_BROWSER_VENV/bin/python" -m pytest -q agent-service/tests
+        run: |
+          "$NANOU_BROWSER_VENV/bin/python" -m pytest -q agent-service/tests
