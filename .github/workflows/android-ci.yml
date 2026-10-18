@@ -18,7 +18,6 @@ on:
       - "gradle/**"
       - "gradlew"
       - "gradle.properties"
-      - ".github/workflows/android-ci.yml"
   workflow_dispatch:
 
 permissions:
