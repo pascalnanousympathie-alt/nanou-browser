@@ -46,7 +46,15 @@ def test_rejects_unsafe_urls(url):
 
 def test_flags_consequential_click_targets():
     assert _high_impact_target("Pay now")
+    assert _high_impact_target("Pay")
+    assert _high_impact_target("Payment")
+    assert _high_impact_target("Checkout")
+    assert _high_impact_target("Transfer")
+    assert _high_impact_target("Send")
+    assert _high_impact_target("Submit")
+    assert _high_impact_target("Delete")
     assert _high_impact_target("Delete account")
+    assert _high_impact_target("Confirm")
     assert _high_impact_target("Confirm transfer")
     assert not _high_impact_target("Open account settings")
     assert not _high_impact_target("Read documentation")
