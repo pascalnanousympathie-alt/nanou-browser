@@ -35,8 +35,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 --version
-          python3 -m venv "$RUNNER_TEMP/nanou-browser-venv"
+          test -x /usr/bin/python3
+          /usr/bin/python3 --version
+          /usr/bin/python3 -m venv "$RUNNER_TEMP/nanou-browser-venv"
           echo "$RUNNER_TEMP/nanou-browser-venv/bin" >> "$GITHUB_PATH"
           echo "VIRTUAL_ENV=$RUNNER_TEMP/nanou-browser-venv" >> "$GITHUB_ENV"
           "$RUNNER_TEMP/nanou-browser-venv/bin/python" --version
