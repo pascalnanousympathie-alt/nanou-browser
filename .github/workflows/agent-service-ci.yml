@@ -1,13 +1,6 @@
 name: Nanou Browser Agent Service CI
 
 on:
-  push:
-    branches:
-      - feat/cloud-browser-agent-mcp
-    paths:
-      - "agent-service/**"
-      - "Dockerfile"
-      - ".github/workflows/agent-service-ci.yml"
   pull_request:
     paths:
       - "agent-service/**"
@@ -19,9 +12,8 @@ permissions:
   contents: read
 
 concurrency:
-  # A push and its matching pull_request synchronization must not cancel each other.
-  # Isolate events while retaining cancellation for superseded runs of the same event/ref.
-  group: nanou-browser-agent-ci-${{ github.event_name }}-${{ github.ref }}
+  # One pull-request validation at a time; do not spend device resources on duplicate push + PR runs.
+  group: nanou-browser-agent-ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -31,19 +23,24 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Prepare isolated Python environment (Debian ARM64)
+      - name: Prepare persistent isolated Python environment (Debian ARM64)
         shell: bash
         run: |
           set -euo pipefail
+          VENV="$HOME/.cache/nanou-browser-runner/venv-py313"
+          mkdir -p "$(dirname "$VENV")"
           test -x /usr/bin/python3
           /usr/bin/python3 --version
-          /usr/bin/python3 -m venv "$RUNNER_TEMP/nanou-browser-venv"
-          echo "$RUNNER_TEMP/nanou-browser-venv/bin" >> "$GITHUB_PATH"
-          echo "VIRTUAL_ENV=$RUNNER_TEMP/nanou-browser-venv" >> "$GITHUB_ENV"
-          "$RUNNER_TEMP/nanou-browser-venv/bin/python" --version
+          if [ ! -x "$VENV/bin/python" ]; then
+            /usr/bin/python3 -m venv "$VENV"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+          echo "VIRTUAL_ENV=$VENV" >> "$GITHUB_ENV"
+          echo "NANOU_BROWSER_VENV=$VENV" >> "$GITHUB_ENV"
+          "$VENV/bin/python" --version
       - name: Install service dependencies
-        run: pip install -r agent-service/requirements.txt
+        run: "$NANOU_BROWSER_VENV/bin/python" -m pip install -r agent-service/requirements.txt
       - name: Run safety and API tests
         env:
           PYTHONPATH: agent-service
-        run: pytest -q agent-service/tests
+        run: "$NANOU_BROWSER_VENV/bin/python" -m pytest -q agent-service/tests
