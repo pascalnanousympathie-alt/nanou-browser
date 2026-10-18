@@ -150,6 +150,7 @@ class BrowserPool:
         self._browser: Browser | None = None
         self._sessions: dict[str, BrowserSession] = {}
         self._browser_lock = asyncio.Lock()
+        self._create_lock = asyncio.Lock()
         self._using_cdp = False
 
     async def _ensure_browser(self) -> Browser:
@@ -200,35 +201,41 @@ class BrowserPool:
             key for key, value in self._sessions.items()
             if now - value.last_used_at > SESSION_TTL_SECONDS
         ]
-        while len(self._sessions) - len(expired) >= MAX_SESSIONS:
-            oldest = min(self._sessions.values(), key=lambda item: item.last_used_at)
-            if oldest.session_id not in expired:
-                expired.append(oldest.session_id)
         for key in expired:
             await self.close(key)
 
+        # Always remove a live least-recently-used session until there is room
+        # for the next creation. This also terminates safely if concurrent or
+        # externally restored state has temporarily exceeded MAX_SESSIONS.
+        while len(self._sessions) >= MAX_SESSIONS:
+            oldest = min(self._sessions.values(), key=lambda item: item.last_used_at)
+            await self.close(oldest.session_id)
+
     async def create(self, url: str) -> BrowserSession:
         normalized = await _assert_public_url(url)
-        await self._expire_sessions()
-        browser = await self._ensure_browser()
-        context = await browser.new_context(
-            viewport={"width": 1365, "height": 900},
-            accept_downloads=False,
-            service_workers="block",
-        )
-        await context.route("**/*", self._guard_route)
-        page = await context.new_page()
-        session_id = str(uuid4())
-        session = BrowserSession(session_id=session_id, context=context, page=page)
-        self._sessions[session_id] = session
-        try:
-            await page.goto(normalized, wait_until="domcontentloaded", timeout=25000)
-            await page.wait_for_timeout(250)
-            session.last_used_at = time.time()
-            return session
-        except Exception:
-            await self.close(session_id)
-            raise
+        # Reserve capacity across the full create/navigation sequence so two
+        # simultaneous requests cannot both claim the last available slot.
+        async with self._create_lock:
+            await self._expire_sessions()
+            browser = await self._ensure_browser()
+            context = await browser.new_context(
+                viewport={"width": 1365, "height": 900},
+                accept_downloads=False,
+                service_workers="block",
+            )
+            await context.route("**/*", self._guard_route)
+            page = await context.new_page()
+            session_id = str(uuid4())
+            session = BrowserSession(session_id=session_id, context=context, page=page)
+            self._sessions[session_id] = session
+            try:
+                await page.goto(normalized, wait_until="domcontentloaded", timeout=25000)
+                await page.wait_for_timeout(250)
+                session.last_used_at = time.time()
+                return session
+            except Exception:
+                await self.close(session_id)
+                raise
 
     def get(self, session_id: str) -> BrowserSession:
         session = self._sessions.get(session_id)
