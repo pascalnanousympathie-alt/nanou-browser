@@ -8,11 +8,6 @@ on:
       - "Dockerfile"
       - ".github/workflows/agent-service-ci.yml"
       - ".github/workflows/agent-service-pr-ci.yml"
-  push:
-    branches: [main, android-alternative]
-    paths:
-      - "agent-service/**"
-      - "Dockerfile"
   workflow_dispatch:
     inputs:
       target_ref:
@@ -38,14 +33,19 @@ jobs:
       - name: Resolve source ref
         id: source
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DISPATCH_TARGET_REF: ${{ inputs.target_ref }}
+          EVENT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "ref=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
-          elif [ -n "${{ inputs.target_ref }}" ]; then
-            echo "ref=${{ inputs.target_ref }}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            echo "ref=$PR_HEAD_SHA" >> "$GITHUB_OUTPUT"
+          elif [ -n "$DISPATCH_TARGET_REF" ]; then
+            echo "ref=$DISPATCH_TARGET_REF" >> "$GITHUB_OUTPUT"
           else
-            echo "ref=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "ref=$EVENT_SHA" >> "$GITHUB_OUTPUT"
           fi
       - uses: actions/checkout@v4
         with:
