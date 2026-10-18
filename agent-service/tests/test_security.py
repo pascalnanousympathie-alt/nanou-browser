@@ -494,6 +494,100 @@ def test_search_uses_temporary_context_without_evicting_live_sessions(monkeypatc
     assert context.closed is True
 
 
+def test_expire_sessions_evicts_oldest_without_looping_over_capacity(monkeypatch):
+    import server
+    from server import BrowserPool, BrowserSession
+
+    class FakeContext:
+        def __init__(self):
+            self.closed = False
+
+        async def close(self):
+            self.closed = True
+
+    class FakePage:
+        pass
+
+    monkeypatch.setattr(server, "MAX_SESSIONS", 2)
+    now = server.time.time()
+    pool = BrowserPool()
+    contexts = {}
+    for session_id, age in (
+        ("expired", server.SESSION_TTL_SECONDS + 60),
+        ("active-old", 60),
+        ("active-new", 5),
+    ):
+        context = FakeContext()
+        contexts[session_id] = context
+        pool._sessions[session_id] = BrowserSession(
+            session_id=session_id,
+            context=context,
+            page=FakePage(),
+            last_used_at=now - age,
+        )
+
+    asyncio.run(pool._expire_sessions())
+
+    assert list(pool._sessions) == ["active-new"]
+    assert contexts["expired"].closed is True
+    assert contexts["active-old"].closed is True
+    assert contexts["active-new"].closed is False
+
+
+def test_concurrent_creates_respect_session_cap(monkeypatch):
+    import server
+    from server import BrowserPool
+
+    class FakePage:
+        url = "about:blank"
+
+        async def goto(self, url, **_kwargs):
+            self.url = url
+            await asyncio.sleep(0.01)
+
+        async def wait_for_timeout(self, _milliseconds):
+            await asyncio.sleep(0)
+
+    class FakeContext:
+        def __init__(self):
+            self.closed = False
+            self.page = FakePage()
+
+        async def route(self, *_args, **_kwargs):
+            return None
+
+        async def new_page(self):
+            return self.page
+
+        async def close(self):
+            self.closed = True
+
+    class FakeBrowser:
+        async def new_context(self, **_kwargs):
+            return FakeContext()
+
+    async def fake_assert_public_url(url):
+        return url
+
+    async def fake_browser():
+        return FakeBrowser()
+
+    monkeypatch.setattr(server, "MAX_SESSIONS", 2)
+    monkeypatch.setattr(server, "_assert_public_url", fake_assert_public_url)
+    pool = BrowserPool()
+    monkeypatch.setattr(pool, "_ensure_browser", fake_browser)
+
+    async def create_many():
+        return await asyncio.gather(
+            *(pool.create(f"https://example.com/{index}") for index in range(5))
+        )
+
+    asyncio.run(create_many())
+
+    assert len(pool._sessions) == 2
+    assert len({session.session_id for session in pool._sessions.values()}) == 2
+
+
 def test_max_sessions_setting_is_bounded(monkeypatch):
     from server import _max_sessions
 
