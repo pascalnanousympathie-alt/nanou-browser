@@ -7,11 +7,6 @@ on:
       - "agent-service/**"
       - "Dockerfile"
       - ".github/workflows/agent-service-ci.yml"
-  pull_request:
-    paths:
-      - "agent-service/**"
-      - "Dockerfile"
-      - ".github/workflows/agent-service-ci.yml"
   workflow_dispatch:
 
 permissions:
