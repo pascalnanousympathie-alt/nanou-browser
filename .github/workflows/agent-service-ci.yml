@@ -26,7 +26,8 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-24.04
+    # Dedicated ARM64 runner in Debian PRoot; never use the separate LudoMada runner.
+    runs-on: [self-hosted, Linux, ARM64, nanou-browser-agent]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
