@@ -43,7 +43,7 @@ jobs:
             java -version
             sdkmanager --version
             yes | sdkmanager --licenses >/dev/null || true
-            sdkmanager "platforms;android-35" "build-tools;35.0.0"
+            sdkmanager "platforms;android-35" "build-tools;34.0.0"
       - restore_cache:
           keys:
             - nanou-android-gradle-v1-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}-{{ checksum "app/build.gradle" }}

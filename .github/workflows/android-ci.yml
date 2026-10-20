@@ -43,7 +43,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
       - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: sdkmanager "platforms;android-35" "build-tools;34.0.0"
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
       - name: Run unit tests and build APK
