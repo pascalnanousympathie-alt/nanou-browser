@@ -23,6 +23,13 @@ from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
 SERVICE_NAME = "Nanou Browser Agent"
 SESSION_TTL_SECONDS = 30 * 60
+BROWSER_CONNECT_TIMEOUT_SECONDS = 12
+BROWSER_CONTEXT_CREATE_TIMEOUT_SECONDS = 7
+BROWSER_ROUTE_SETUP_TIMEOUT_SECONDS = 3
+BROWSER_PAGE_CREATE_TIMEOUT_SECONDS = 5
+BROWSER_NAVIGATION_TIMEOUT_MS = 16_000
+BROWSER_SESSION_CREATE_TIMEOUT_SECONDS = 35
+BROWSER_SESSION_CLEANUP_TIMEOUT_SECONDS = 3
 
 
 def _max_sessions() -> int:
@@ -170,13 +177,14 @@ class BrowserPool:
             if cdp_url:
                 self._browser = await self._playwright.chromium.connect_over_cdp(
                     validate_local_cdp_url(cdp_url),
-                    timeout=10000,
+                    timeout=BROWSER_CONNECT_TIMEOUT_SECONDS * 1000,
                 )
                 self._using_cdp = True
             else:
                 self._browser = await self._playwright.chromium.launch(
                     headless=True,
                     args=["--no-sandbox", "--disable-dev-shm-usage"],
+                    timeout=BROWSER_CONNECT_TIMEOUT_SECONDS * 1000,
                 )
                 self._using_cdp = False
             return self._browser
@@ -213,29 +221,81 @@ class BrowserPool:
 
     async def create(self, url: str) -> BrowserSession:
         normalized = await _assert_public_url(url)
-        # Reserve capacity across the full create/navigation sequence so two
-        # simultaneous requests cannot both claim the last available slot.
         async with self._create_lock:
-            await self._expire_sessions()
-            browser = await self._ensure_browser()
-            context = await browser.new_context(
-                viewport={"width": 1365, "height": 900},
-                accept_downloads=False,
-                service_workers="block",
-            )
-            await context.route("**/*", self._guard_route)
-            page = await context.new_page()
-            session_id = str(uuid4())
-            session = BrowserSession(session_id=session_id, context=context, page=page)
-            self._sessions[session_id] = session
+            context: BrowserContext | None = None
+            session_id: str | None = None
             try:
-                await page.goto(normalized, wait_until="domcontentloaded", timeout=25000)
-                await page.wait_for_timeout(250)
-                session.last_used_at = time.time()
-                return session
-            except Exception:
-                await self.close(session_id)
+                # Apply one end-to-end deadline as well as stage-specific deadlines.
+                # A stalled CDP endpoint or slow browser startup must not leave an MCP
+                # tools/call request open indefinitely on a low-resource host.
+                async with asyncio.timeout(BROWSER_SESSION_CREATE_TIMEOUT_SECONDS):
+                    await self._expire_sessions()
+                    browser = await asyncio.wait_for(
+                        self._ensure_browser(),
+                        timeout=BROWSER_CONNECT_TIMEOUT_SECONDS + 1,
+                    )
+                    context = await asyncio.wait_for(
+                        browser.new_context(
+                            viewport={"width": 1365, "height": 900},
+                            accept_downloads=False,
+                            service_workers="block",
+                        ),
+                        timeout=BROWSER_CONTEXT_CREATE_TIMEOUT_SECONDS,
+                    )
+                    await asyncio.wait_for(
+                        context.route("**/*", self._guard_route),
+                        timeout=BROWSER_ROUTE_SETUP_TIMEOUT_SECONDS,
+                    )
+                    page = await asyncio.wait_for(
+                        context.new_page(),
+                        timeout=BROWSER_PAGE_CREATE_TIMEOUT_SECONDS,
+                    )
+                    session_id = str(uuid4())
+                    session = BrowserSession(session_id=session_id, context=context, page=page)
+                    self._sessions[session_id] = session
+                    await asyncio.wait_for(
+                        page.goto(
+                            normalized,
+                            wait_until="domcontentloaded",
+                            timeout=BROWSER_NAVIGATION_TIMEOUT_MS,
+                        ),
+                        timeout=(BROWSER_NAVIGATION_TIMEOUT_MS / 1000) + 2,
+                    )
+                    await asyncio.wait_for(page.wait_for_timeout(250), timeout=2)
+                    session.last_used_at = time.time()
+                    return session
+            except TimeoutError as exc:
+                await self._cleanup_partial_context(session_id, context)
+                raise RuntimeError(
+                    "Browser session startup timed out. Check Chromium startup, the local CDP endpoint "
+                    "if configured, DNS resolution, and the destination site's response."
+                ) from exc
+            except BaseException:
+                # Also clean up when a client disconnects/cancels a tool call before
+                # a session is returned. This prevents orphaned contexts and session IDs.
+                await self._cleanup_partial_context(session_id, context)
                 raise
+
+    async def _cleanup_partial_context(
+        self,
+        session_id: str | None,
+        context: BrowserContext | None,
+    ) -> None:
+        try:
+            if session_id is not None and session_id in self._sessions:
+                await asyncio.wait_for(
+                    self.close(session_id),
+                    timeout=BROWSER_SESSION_CLEANUP_TIMEOUT_SECONDS,
+                )
+            elif context is not None:
+                await asyncio.wait_for(
+                    context.close(),
+                    timeout=BROWSER_SESSION_CLEANUP_TIMEOUT_SECONDS,
+                )
+        except BaseException:
+            # Cleanup is best-effort: it must never replace the original browser error.
+            if session_id is not None:
+                self._sessions.pop(session_id, None)
 
     def get(self, session_id: str) -> BrowserSession:
         session = self._sessions.get(session_id)

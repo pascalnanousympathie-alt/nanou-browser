@@ -534,6 +534,72 @@ def test_expire_sessions_evicts_oldest_without_looping_over_capacity(monkeypatch
     assert contexts["active-new"].closed is False
 
 
+
+def test_create_closes_partial_context_when_page_creation_fails(monkeypatch):
+    import server
+    from server import BrowserPool
+
+    class FakeContext:
+        def __init__(self):
+            self.closed = False
+
+        async def route(self, *_args, **_kwargs):
+            return None
+
+        async def new_page(self):
+            raise RuntimeError("synthetic page creation failure")
+
+        async def close(self):
+            self.closed = True
+
+    context = FakeContext()
+
+    class FakeBrowser:
+        async def new_context(self, **_kwargs):
+            return context
+
+    async def fake_assert_public_url(url):
+        return url
+
+    async def fake_browser():
+        return FakeBrowser()
+
+    monkeypatch.setattr(server, "_assert_public_url", fake_assert_public_url)
+    pool = BrowserPool()
+    monkeypatch.setattr(pool, "_ensure_browser", fake_browser)
+
+    with pytest.raises(RuntimeError, match="synthetic page creation failure"):
+        asyncio.run(pool.create("https://example.com"))
+
+    assert context.closed is True
+    assert pool._sessions == {}
+
+
+def test_create_returns_bounded_error_when_context_creation_stalls(monkeypatch):
+    import server
+    from server import BrowserPool
+
+    class FakeBrowser:
+        async def new_context(self, **_kwargs):
+            await asyncio.sleep(0.2)
+
+    async def fake_assert_public_url(url):
+        return url
+
+    async def fake_browser():
+        return FakeBrowser()
+
+    monkeypatch.setattr(server, "_assert_public_url", fake_assert_public_url)
+    monkeypatch.setattr(server, "BROWSER_CONTEXT_CREATE_TIMEOUT_SECONDS", 0.01)
+    pool = BrowserPool()
+    monkeypatch.setattr(pool, "_ensure_browser", fake_browser)
+
+    with pytest.raises(RuntimeError, match="Browser session startup timed out"):
+        asyncio.run(pool.create("https://example.com"))
+
+    assert pool._sessions == {}
+
+
 def test_concurrent_creates_respect_session_cap(monkeypatch):
     import server
     from server import BrowserPool
