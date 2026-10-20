@@ -10,63 +10,34 @@ jobs:
       - checkout
       - restore_cache:
           keys:
-            - nanou-agent-pydeps-v1-{{ checksum "agent-service/requirements.txt" }}
-            - nanou-agent-pydeps-v1-
+            - nanou-agent-pydeps-v2-{{ checksum "agent-service/requirements.txt" }}
+            - nanou-agent-pydeps-v2-
       - run:
-          name: Install agent service dependencies
+          name: Install Agent Service dependencies
           command: |
             python -m pip install --upgrade pip
             python -m pip install -r agent-service/requirements.txt
       - save_cache:
-          key: nanou-agent-pydeps-v1-{{ checksum "agent-service/requirements.txt" }}
+          key: nanou-agent-pydeps-v2-{{ checksum "agent-service/requirements.txt" }}
           paths:
             - ~/.cache/pip
       - run:
-          name: Run browser service safety and API tests
+          name: Check Python source syntax
+          command: python -m compileall -q agent-service
+      - run:
+          name: Run browser-agent safety and API tests
           environment:
             PYTHONPATH: agent-service
           command: python -m pytest -q agent-service/tests
-
-  android-build:
-    machine:
-      image: android:default
-    resource_class: medium
-    working_directory: ~/project
-    steps:
-      - checkout
       - run:
-          name: Make Gradle wrapper executable
-          command: chmod +x ./gradlew
-      - run:
-          name: Confirm Android build tools
+          name: Verify web-service deployment inputs
           command: |
-            java -version
-            sdkmanager --version
-            yes | sdkmanager --licenses >/dev/null || true
-            sdkmanager "platforms;android-35" "build-tools;34.0.0"
-      - restore_cache:
-          keys:
-            - nanou-android-gradle-v1-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}-{{ checksum "app/build.gradle" }}
-            - nanou-android-gradle-v1-
-      - run:
-          name: Run Android unit tests and build debug APK
-          command: ./gradlew --no-daemon testDebugUnitTest assembleDebug
-      - save_cache:
-          key: nanou-android-gradle-v1-{{ checksum "gradle/wrapper/gradle-wrapper.properties" }}-{{ checksum "app/build.gradle" }}
-          paths:
-            - ~/.gradle/caches
-            - ~/.gradle/wrapper
-      - run:
-          name: Validate built APK
-          command: |
-            test -s app/build/outputs/apk/debug/app-debug.apk
-            unzip -t app/build/outputs/apk/debug/app-debug.apk | tail -n 2
-      - store_artifacts:
-          path: app/build/outputs/apk/debug/app-debug.apk
-          destination: NanouBrowser-debug.apk
+            test -s Dockerfile
+            test -s render.yaml
+            grep -q 'healthCheckPath: /healthz' render.yaml
+            grep -q 'NANOU_AGENT_API_KEY' render.yaml
 
 workflows:
-  nanou-browser-verification:
+  nanou-browser-web-agent-verification:
     jobs:
       - agent-service-tests
-      - android-build

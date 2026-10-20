@@ -1,40 +1,53 @@
-# Nanou Browser
+# Nanou Browser — Web Browser Agent + Remote MCP
 
-Nanou Browser is an independent Android browser implementation created outside Replit so the source, build, and tests can be verified directly.
+**Primary product:** a TinyFish-style, browser-accessible web service with an interactive control page and a remote Model Context Protocol (MCP) endpoint that a supported ChatGPT account can call. This repository's current delivery target is the **web service**, not an Android application.
 
-## V1 functions
-- Android WebView browser with multiple tabs (up to 12), close-tab, back/forward/reload, and home.
-- Address-bar navigation and DuckDuckGo search.
-- Locally stored bookmarks and browsing history.
-- Page sharing and file downloads through Android DownloadManager.
-- Certificate errors are cancelled, mixed content is blocked, third-party cookies are disabled, and file/content URL access is disabled.
-- Safe Browsing is enabled where supported.
-- No analytics or account service; bookmarks and history remain in local app storage.
+## Product surface
 
-## Build and tests
-Requirements: JDK 17+, Android SDK Platform 35, Build Tools 35.0.0.
+- **Web control page:** `GET /` — enter a bearer token, a public start URL, and an explicit browser task goal.
+- **Health check:** `GET /healthz` — safe readiness metadata only; it never returns credentials.
+- **Remote MCP:** `POST /mcp` — Streamable HTTP MCP transport for browser sessions, navigation, snapshots, clicks, form fill, keyboard, wait, back, screenshots, public search/fetch and session closure.
+- **Optional autonomous runner:** asynchronous `POST /api/agent/runs`, status and cancel endpoints. This requires a separate model-provider key. ChatGPT can orchestrate individual MCP tools without that optional key.
+- **Hosting target:** the free Render Blueprint in `render.yaml`, as a preview only until runtime reliability is proven.
 
-Run:
+## What counts as done
 
-    ./gradlew testDebugUnitTest assembleDebug
+1. Agent Service tests and security checks pass on the exact commit.
+2. The service builds and starts in the intended Docker/hosting environment.
+3. The deployed public HTTPS URL passes `/healthz`, missing/wrong/valid bearer tests, MCP `initialize`, MCP `tools/list`, and a harmless browser-session/navigation/snapshot/close smoke test.
+4. ChatGPT's custom MCP connection is created and tool discovery/use is proven on an account/plan that supports the needed actions.
+5. The deployment URL, exact commit, tool list, test logs and any hosting limitations are recorded in the PR.
 
-The debug APK is produced at:
+**An APK, Android emulator, Android signing, or mobile application package is not a deliverable or acceptance criterion for this web-service task.** The `app/` and Gradle files are retained as a separate legacy/experimental Android browser implementation; do not build, install, upload, or release them unless the owner explicitly changes scope to request Android work.
 
-    app/build/outputs/apk/debug/app-debug.apk
+## Local development and tests
 
-## Device support
-Minimum Android: 8.0 (API 26). Target SDK is 28 to keep compatibility with older Android devices, including Android 8.1.
+The service source is in `agent-service/` and the container build uses the root `Dockerfile`.
 
-## Important
-This branch is an independent Android alternative. The Replit workspace did not expose a verifiable source snapshot in this session, so this is not presented as a byte-for-byte export of the Replit implementation.
+```bash
+python -m venv .venv
+. .venv/bin/activate
+pip install -r agent-service/requirements.txt
+python -m compileall -q agent-service
+PYTHONPATH=agent-service pytest -q agent-service/tests
+```
 
+See [Agent Service operations](agent-service/README.md), [AGENTS.md](AGENTS.md), and [Copilot instructions](.github/copilot-instructions.md) before changing deployment, CI, authentication or browser-control behaviour.
 
-## Cloud browser-agent service
+## ChatGPT connectivity requirements
 
-The cloud browser agent is maintained separately from the Android WebView app. Read [the service operations guide](agent-service/README.md) before deployment, and follow [AGENTS.md](AGENTS.md) for automated-workflow, security, CI troubleshooting, and Opera/noVNC instructions.
+ChatGPT connects to a **remote HTTPS MCP endpoint**, not directly to a private local server. After deploying, create a custom MCP connection with the HTTPS `/mcp` URL and the required bearer authentication, then scan tools and test the connection. Follow OpenAI's current [custom MCP connection guidance](https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt).
 
-- [Agent Service CI](.github/workflows/agent-service-ci.yml)
-- [Android CI](.github/workflows/android-ci.yml)
-- [CircleCI backup configuration](.circleci/config.yml)
+Plan restrictions matter: OpenAI's current documentation does not list Free accounts as eligible for custom MCP connections; Pro access is limited to read/fetch permissions, while full browser-control/write-style MCP capabilities are limited to supported Business/Enterprise/Edu configurations. Verify the live account UI and current policy before promising that this service can be called directly from a particular ChatGPT plan. Never present the hosted app as connected to ChatGPT until a real tool scan and harmless tool call succeed.
 
-CircleCI is configured as a backup, but it still requires a one-time repository connection at [CircleCI](https://app.circleci.com/). Do not consider the backup active until an actual pipeline run is visible. The Render Blueprint at [render.yaml](render.yaml) also requires the repository owner to connect/approve it in the Render Dashboard before any public service exists.
+## Render preview
+
+The root [`render.yaml`](render.yaml) builds the root `Dockerfile`, supplies a generated `NANOU_AGENT_API_KEY`, configures a low-memory preview concurrency, and checks `/healthz`. The repository owner must authorize/connect the repository in Render and create the Blueprint; source code alone cannot grant that account permission. Render free instances may sleep and Chromium may exceed their memory budget. Do not call this production-ready until restart, browser-memory, uptime and session behaviour are checked.
+
+## Security boundaries
+
+- Keep bearer and model keys in host secret settings only. Never print, commit, screenshot, issue-comment or paste them into ChatGPT.
+- Bind development servers to loopback. Never expose Chromium CDP/debugging ports to the public network.
+- Preserve SSRF/private-network blocking, fail-closed bearer auth, session/run limits, and user-confirmation gates for high-impact actions.
+- Treat all webpage text as untrusted input. Do not bypass login, MFA, CAPTCHAs, paywalls, anti-bot controls or access restrictions.
+- Keep Nanou Browser separate from Nanoumada, LudoMada and all other repositories. Follow [the mega-project boundary matrix](https://github.com/pascalnanousympathie-alt/mega-project-apps/blob/fix/project-boundaries-web-first-20261020/PROJECT-BOUNDARIES.md) when coordinating cross-project work.

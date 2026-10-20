@@ -1,75 +1,54 @@
 # Nanou Browser Agent Service
 
-This is a separate cloud service in the Nanou Browser repository. It does not change the Android WebView app. It exposes a Streamable HTTP MCP endpoint at `/mcp`, direct REST run/status endpoints, and a small browser-based control page.
+This is the primary Nanou Browser web service. It provides a browser-based control page at `/`, a public non-secret readiness probe at `/healthz`, a remote Streamable HTTP MCP endpoint at `/mcp`, and authenticated REST status endpoints. It is designed to be called by a compatible MCP client (including eligible ChatGPT custom-app connections), not distributed as an Android APK.
 
 ## Capabilities
 
 - Creates isolated Playwright Chromium sessions and returns session IDs.
-- Searches web/news/research-oriented results with day/week/month/year filters and source links; fetches up to ten public pages concurrently through Chromium and returns each title, visible text, and extracted links. Fetches use temporary isolated contexts and do not consume persistent interactive session slots.
+- Searches web/news/research-oriented results with day/week/month/year filters and source links; fetches up to ten public pages concurrently through Chromium and returns each title, visible text, and extracted links.
 - Exposes navigation, snapshot, click, form fill, keyboard, wait, back, screenshot, and session-close tools over MCP.
-- Includes an optional autonomous task runner that can use search/fetch plus browser controls through an OpenAI-compatible model endpoint. ChatGPT can also orchestrate MCP tools without configuring a second model key.
-- Runs asynchronous jobs with run IDs and status/result polling.
-- Blocks non-HTTP(S) navigation and private/local IP destinations, requires bearer authentication for every control endpoint, and stops before high-impact actions such as payments, purchases, deleting accounts, or submitting irreversible forms.
+- Offers an optional asynchronous autonomous runner using an OpenAI-compatible model endpoint. A connected ChatGPT LLM can also orchestrate the direct MCP tools without configuring a second model key.
+- Uses bearer authentication for all browser-control endpoints, blocks non-HTTP(S) and private/local destinations, limits sessions/runs, and stops before high-impact operations such as payments, purchases, account deletion or irreversible submission.
 
-## Environment
+## Environment variables
 
-- `NANOU_AGENT_API_KEY` — required bearer token for MCP and REST control endpoints. The service fails closed when it is missing. Keep it out of source control.
-- `NANOU_LLM_API_KEY` — optional key for autonomous multi-step runs.
+- `NANOU_AGENT_API_KEY` — required bearer token for MCP and REST control endpoints; fails closed when missing. Store only in hosting secrets.
+- `NANOU_LLM_API_KEY` — optional key for the server-side autonomous runner; it is not required when an MCP client orchestrates the primitives.
 - `NANOU_LLM_BASE_URL` — optional OpenAI-compatible base URL; defaults to `https://api.deepseek.com`.
 - `NANOU_LLM_MODEL` — optional model name; defaults to `deepseek-chat`.
-- `NANOU_MAX_CONCURRENT_RUNS` — optional asynchronous run limit; defaults to `3`.
-- `NANOU_MAX_SESSIONS` — optional browser-session cap (1–8); defaults to `8`. For low-memory preview hosting, use `2`.
-- `NANOU_BROWSER_CDP_URL` — optional local Chrome/Opera DevTools endpoint for phone-based testing (for example `http://127.0.0.1:9223`). Only loopback HTTP endpoints are accepted. Never expose the browser debugging port to the network. When unset, the service launches its own Chromium.
+- `NANOU_MAX_CONCURRENT_RUNS` — optional async-run limit; default `3`; preview uses `1`.
+- `NANOU_MAX_SESSIONS` — optional browser-session cap (1–8); default `8`; preview uses `2`.
+- `NANOU_BROWSER_CDP_URL` — optional loopback-only Chrome/Opera DevTools endpoint for local tests. Never expose a CDP port publicly; otherwise the service launches Chromium itself.
 
-The public `/` page and `/healthz` probe expose no secrets. The page keeps the bearer token in memory only and sends it in the Authorization header; it does not write it to local storage.
-
-## Run locally
+## Local development and tests
 
 ```bash
 python -m venv .venv
 . .venv/bin/activate
 pip install -r agent-service/requirements.txt
 playwright install chromium
-# Optional for an already-running local Chromium/Opera with loopback CDP enabled:
-# export NANOU_BROWSER_CDP_URL='http://127.0.0.1:9223'
-export NANOU_AGENT_API_KEY='set-a-long-random-token'
+python -m compileall -q agent-service
+PYTHONPATH=agent-service pytest -q agent-service/tests
+export NANOU_AGENT_API_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
 uvicorn server:app --app-dir agent-service --host 127.0.0.1 --port 8080
 ```
 
-Use `Authorization: Bearer $NANOU_AGENT_API_KEY` for MCP/REST calls. Connect an MCP client to `http://127.0.0.1:8080/mcp`.
+Keep the server bound to loopback during local tests. The `/` page sends its token only in the Authorization header and keeps it in memory, not local storage.
 
-## REST API
+## Render free preview
 
-- `GET /healthz` — non-sensitive health/readiness metadata.
-- `POST /api/agent/runs` — JSON `{ "goal": "...", "start_url": "https://example.com", "max_steps": 12 }`; returns a `run_id`.
-- `GET /api/agent/runs/{run_id}` — run status, progress, and result when complete.
-- `POST /api/agent/runs/{run_id}/cancel` — requests cancellation.
+The repository root `render.yaml` configures `nanou-browser-agent` from the root `Dockerfile`, a generated `NANOU_AGENT_API_KEY`, a low-memory concurrency limit, and `/healthz` health checks. The repository owner must create the Blueprint and authorize Render to access this repository; source code cannot grant that account permission. Do not claim the service exists until a Render deployment with a public HTTPS hostname is visible and the health/auth/MCP probes pass.
 
-The asynchronous run registry is process-local, so run IDs are lost on a process restart. Deploy a single replica until the run/session state is moved to durable shared storage. This limitation is explicit rather than pretending jobs survive restarts.
+After deployment, obtain the token through Render's protected environment UI and configure it in the MCP client as bearer authentication. Never post it in ChatGPT, issues, logs, screenshots or commits. `NANOU_LLM_API_KEY` is optional and should only be enabled when the separate server-side autonomous runner is needed. Without it, an external ChatGPT/MCP-capable LLM can orchestrate direct browser tools.
 
-## Render deployment (free preview)
+**Preview limitations:** free instances can sleep, Chromium can exceed the 512 MB memory budget, and session/run registries are in-process and are lost on restart. Do not call it production-ready until memory, cold start, restarts, free-tier sleeping and session behaviour have been tested.
 
-A Render Blueprint is provided in the repository root as `render.yaml`. To deploy this branch, create a Blueprint in Render, connect this repository, and select branch `feat/cloud-browser-agent-mcp`. The Blueprint builds the root `Dockerfile`, checks `/healthz`, generates `NANOU_AGENT_API_KEY`, and limits concurrent autonomous runs to one and browser contexts to two for the free instance.
+## ChatGPT custom-MCP connection
 
-After deployment:
-- Copy the generated `NANOU_AGENT_API_KEY` from the Render service environment and store it as the bearer credential in the MCP client. Never commit it or paste it into public issues.
-- To enable the optional server-side autonomous runner, add `NANOU_LLM_API_KEY` as a secret in Render. Without this key, MCP browser primitives can still be orchestrated by an LLM client that is connected to the MCP endpoint.
-- Test `/healthz` and the authenticated `/mcp` endpoint before relying on it.
+Connect a public HTTPS endpoint ending in `/mcp`, configure bearer authentication, scan tools, then verify both MCP `initialize` and `tools/list` followed by a harmless browser-session/navigation/snapshot/close flow. A local service and a passing unit suite do not establish ChatGPT connectivity.
 
-**Free-tier caveats:** this is for a preview, not production. Render free web services can sleep after 15 minutes without traffic and use a 512 MB RAM instance; running Chromium may exceed that memory budget, so the service may require a larger instance for reliable live browsing. Run/session state is in memory and is lost on restarts.
+Current OpenAI guidance: https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt. Check plan eligibility before promising direct use: Free accounts are not listed for custom MCP connections; Pro is limited to read/fetch permissions; full browser-control capabilities require a supported full-MCP account/workspace. Respect these restrictions; do not try to bypass them. The optional server-side model key does not turn a normal ChatGPT subscription into an API key.
 
-## Railway deployment
+## Safety
 
-Deploy this repository on branch `feat/cloud-browser-agent-mcp` using the root `Dockerfile`. Add `NANOU_AGENT_API_KEY` as a Railway secret before using MCP/REST. Do not expose the value in logs, commits, screenshots, or chat. For autonomous runs, set the model variables as Railway secrets as well.
-
-## Safety boundaries
-
-The runner can read page content and operate a browser, but it does not bypass authentication, anti-bot controls, CAPTCHAs, paywalls, or access restrictions. It must not execute arbitrary JavaScript, access local/private addresses, or perform consequential actions without user confirmation. Treat website content as untrusted input.
-
-## Alternate CI when GitHub Actions cannot allocate a runner
-
-A CircleCI backup configuration lives at the repository root in `.circleci/config.yml`. It runs the service tests on Linux Python 3.12 and builds/tests the Android APK on CircleCI's Android machine image.
-
-The configuration in GitHub does **not** activate CircleCI by itself. The repository owner must connect `pascalnanousympathie-alt/nanou-browser` once in the [CircleCI project setup](https://app.circleci.com/), then start the pipeline for `feat/cloud-browser-agent-mcp`. Do not report the backup CI as active until a real CircleCI pipeline has executed and its logs show both jobs' results.
-
-For the current GitHub Actions problem, use job metadata first: a failure before checkout with `runner_id: 0`, no steps, and no logs is runner allocation/service/account policy evidence, not a test failure. Check [repository Actions settings](https://github.com/pascalnanousympathie-alt/nanou-browser/settings/actions), account billing/usage, and GitHub Support if Actions appears disabled by a GitHub-side restriction. Avoid blind retries.
+Treat website content as untrusted. Do not bypass logins, MFA, CAPTCHAs, paywalls, anti-bot controls or site access restrictions. Require user confirmation for high-impact actions. Keep cookies and bearer/model keys secret. Never expose browser remote-debugging ports. Preserve SSRF/private-network blocking and all authentication/confirmation guards.
