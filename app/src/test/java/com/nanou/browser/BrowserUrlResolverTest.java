@@ -38,4 +38,46 @@ public class BrowserUrlResolverTest {
         assertTrue(BrowserUrlResolver.isHomeUrl("https://nanou.browser/"));
         assertFalse(BrowserUrlResolver.isHomeUrl("https://example.com"));
     }
+
+    @Test public void handlesQueryAndFragmentOnBareDomains() {
+        assertEquals("https://example.com?q=nanou", BrowserUrlResolver.resolve("example.com?q=nanou"));
+        assertEquals("https://example.com#section", BrowserUrlResolver.resolve("example.com#section"));
+        assertEquals("https://example.com/path?q=nanou#section",
+                BrowserUrlResolver.resolve("example.com/path?q=nanou#section"));
+    }
+
+    @Test public void handlesLocalhostWithoutPortAndWithQuery() {
+        assertEquals("http://localhost", BrowserUrlResolver.resolve("localhost"));
+        assertEquals("http://localhost/path?q=1", BrowserUrlResolver.resolve("localhost/path?q=1"));
+        assertEquals("http://localhost:8080/health?full=true#top",
+                BrowserUrlResolver.resolve("localhost:8080/health?full=true#top"));
+    }
+
+    @Test public void rejectsInvalidPortNumbers() {
+        assertFalse(BrowserUrlResolver.isWebUrl("https://example.com:65536/"));
+        assertFalse(BrowserUrlResolver.isWebUrl("https://example.com:99999/"));
+        assertTrue(BrowserUrlResolver.isWebUrl("https://example.com:65535/"));
+        assertTrue(BrowserUrlResolver.isWebUrl("http://example.com:0/"));
+        assertEquals(BrowserUrlResolver.SEARCH_BASE + "localhost%3A99999",
+                BrowserUrlResolver.resolve("localhost:99999"));
+    }
+
+    @Test public void recognizesBareDomainsWithPorts() {
+        assertEquals("https://example.com:443", BrowserUrlResolver.resolve("example.com:443"));
+        assertEquals("https://example.com:8443/path?q=1",
+                BrowserUrlResolver.resolve("example.com:8443/path?q=1"));
+        assertEquals(BrowserUrlResolver.SEARCH_BASE + "example.com%3A99999",
+                BrowserUrlResolver.resolve("example.com:99999"));
+    }
+
+    @Test public void recognizesBracketedIpv6Hosts() {
+        assertEquals("https://[::1]", BrowserUrlResolver.resolve("[::1]"));
+        assertEquals("https://[::1]:8080/health?ok=1",
+                BrowserUrlResolver.resolve("[::1]:8080/health?ok=1"));
+        assertEquals("https://[2001:db8::1]:8443", BrowserUrlResolver.resolve("[2001:db8::1]:8443"));
+        assertEquals(BrowserUrlResolver.SEARCH_BASE + "%5B%3A%3A1%5D%3A99999",
+                BrowserUrlResolver.resolve("[::1]:99999"));
+        assertEquals(BrowserUrlResolver.SEARCH_BASE + "%5Binvalid%5D",
+                BrowserUrlResolver.resolve("[invalid]"));
+    }
 }

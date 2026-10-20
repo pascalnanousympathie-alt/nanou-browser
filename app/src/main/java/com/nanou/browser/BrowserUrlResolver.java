@@ -11,7 +11,7 @@ public final class BrowserUrlResolver {
     public static final String HOME_URL = "nanou://home";
     public static final String SEARCH_BASE = "https://duckduckgo.com/?q=";
     private static final Pattern HOST_LIKE = Pattern.compile(
-            "^(?i)(localhost(?::[0-9]{1,5})?|(?:[a-z0-9-]+\\.)+[a-z]{2,63}(?::[0-9]{1,5})?(?:/.*)?|(?:[0-9]{1,3}\\.){3}[0-9]{1,3}(?::[0-9]{1,5})?(?:/.*)?)$"
+            "^(?i)(localhost|(?:[a-z0-9-]+\\.)+[a-z]{2,63}|(?:[0-9]{1,3}\\.){3}[0-9]{1,3}|\\[[0-9a-f:.]+\\])(?::[0-9]{1,5})?(?:[/?#].*)?$"
     );
 
     private BrowserUrlResolver() {}
@@ -21,14 +21,16 @@ public final class BrowserUrlResolver {
         String input = rawInput.trim();
         if (HOME_URL.equalsIgnoreCase(input) || "home".equalsIgnoreCase(input)) return HOME_URL;
         if (containsWhitespace(input)) return search(input);
-        if (input.toLowerCase(Locale.ROOT).matches("^localhost:[0-9]{1,5}(/.*)?$")) {
-            return "http://" + input;
+        if (input.toLowerCase(Locale.ROOT).matches("^localhost(?::[0-9]{1,5})?(?:[/?#].*)?$")) {
+            String candidate = "http://" + input;
+            if (isWebUrl(candidate)) return candidate;
         }
-        if (hasScheme(input)) return isWebUrl(input) ? input : search(input);
+        // Test bare host:port before treating the colon as a URI scheme.
         if (HOST_LIKE.matcher(input).matches()) {
             String candidate = "https://" + input;
             if (isWebUrl(candidate)) return candidate;
         }
+        if (hasScheme(input)) return isWebUrl(input) ? input : search(input);
         return search(input);
     }
 
@@ -37,9 +39,11 @@ public final class BrowserUrlResolver {
         try {
             URI uri = URI.create(value);
             String scheme = uri.getScheme();
+            int port = uri.getPort();
             return scheme != null
                     && ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
-                    && uri.getHost() != null && !uri.getHost().isEmpty();
+                    && uri.getHost() != null && !uri.getHost().isEmpty()
+                    && port >= -1 && port <= 65535;
         } catch (IllegalArgumentException ex) {
             return false;
         }
