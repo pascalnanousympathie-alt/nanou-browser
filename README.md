@@ -4,7 +4,7 @@
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/pascalnanousympathie-alt/nanou-browser/tree/feat/cloud-browser-agent-mcp)
 
-This Blueprint is configured for Render's free preview. Because this repository is private, Render may ask you to authorize GitHub access; review the service list and keep the plan set to **Free** before approving.
+This Blueprint is configured for Render's free preview. Because this repository is private, Render may ask you to authorize GitHub access; review the service list and keep the plan set to **Free** before approving. During first setup it also asks for the private `NANOU_LLM_API_KEY`; use a free OpenRouter key only, and never put it into GitHub or ChatGPT.
 
 ## Product surface
 
@@ -37,6 +37,12 @@ PYTHONPATH=agent-service pytest -q agent-service/tests
 ```
 
 See [Agent Service operations](agent-service/README.md), [AGENTS.md](AGENTS.md), and [Copilot instructions](.github/copilot-instructions.md) before changing deployment, CI, authentication or browser-control behaviour.
+
+## Free-only route when ChatGPT Free cannot connect custom MCP
+
+The hosted web control page can still run tasks without a paid ChatGPT plan. This Blueprint uses the OpenAI-compatible OpenRouter endpoint with model `openrouter/free`. OpenRouter currently lists this router at $0 per prompt/completion token; its free-model tier is limited to **50 requests per day** (and 20 per minute), with availability varying by upstream provider. See [OpenRouter Free Models Router](https://openrouter.ai/openrouter/free/) and [current pricing/limits](https://openrouter.ai/pricing).
+
+Create a key in [OpenRouter API Keys](https://openrouter.ai/settings/keys) and enter it only in Render's secret field for `NANOU_LLM_API_KEY`. Do not buy credits, enable paid models, or paste the key into this conversation. If the free request limit is reached, wait for the reset. This enables the Nanou Browser website's server-side autonomous task runner; it **does not** turn this Free ChatGPT account into a custom-MCP client or make Nanou Browser callable as an in-chat tool.
 
 ## ChatGPT connectivity requirements
 
