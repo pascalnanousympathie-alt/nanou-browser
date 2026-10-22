@@ -2,6 +2,10 @@
 
 **Primary product:** a TinyFish-style, browser-accessible web service with an interactive control page and a remote Model Context Protocol (MCP) endpoint that a supported ChatGPT account can call. This repository's current delivery target is the **web service**, not an Android application.
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/pascalnanousympathie-alt/nanou-browser/tree/feat/cloud-browser-agent-mcp)
+
+This Blueprint is configured for Render's free preview. Because this repository is private, Render may ask you to authorize GitHub access; review the service list and keep the plan set to **Free** before approving.
+
 ## Product surface
 
 - **Web control page:** `GET /` — enter a bearer token, a public start URL, and an explicit browser task goal.
