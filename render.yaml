@@ -8,7 +8,9 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /healthz
-    autoDeployTrigger: commit
+    # This service is launched from the Deploy to Render button.
+    # Require explicit/manual redeploys so later source pushes don't deploy silently.
+    autoDeployTrigger: off
     envVars:
       - key: NANOU_AGENT_API_KEY
         generateValue: true
