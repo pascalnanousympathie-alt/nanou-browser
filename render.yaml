@@ -14,7 +14,13 @@ services:
     envVars:
       - key: NANOU_AGENT_API_KEY
         generateValue: true
+      - key: NANOU_LLM_API_KEY
+        sync: false
+      - key: NANOU_LLM_BASE_URL
+        value: https://openrouter.ai/api/v1
+      - key: NANOU_LLM_MODEL
+        value: openrouter/free
       - key: NANOU_MAX_CONCURRENT_RUNS
         value: "1"
       - key: NANOU_MAX_SESSIONS
-        value: "2"
+        value: "1"
