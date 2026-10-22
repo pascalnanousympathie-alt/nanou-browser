@@ -13,11 +13,11 @@ This is the primary Nanou Browser web service. It provides a browser-based contr
 ## Environment variables
 
 - `NANOU_AGENT_API_KEY` — required bearer token for MCP and REST control endpoints; fails closed when missing. Store only in hosting secrets.
-- `NANOU_LLM_API_KEY` — optional key for the server-side autonomous runner; it is not required when an MCP client orchestrates the primitives.
-- `NANOU_LLM_BASE_URL` — optional OpenAI-compatible base URL; defaults to `https://api.deepseek.com`.
-- `NANOU_LLM_MODEL` — optional model name; defaults to `deepseek-chat`.
+- `NANOU_LLM_API_KEY` — required for the server-side autonomous runner used by the web control page; direct MCP primitives do not need this second model key.
+- `NANOU_LLM_BASE_URL` — OpenAI-compatible endpoint; default `https://api.deepseek.com`, while Render Free preview sets `https://openrouter.ai/api/v1`.
+- `NANOU_LLM_MODEL` — model name; default `deepseek-chat`, while Render Free preview sets `openrouter/free`.
 - `NANOU_MAX_CONCURRENT_RUNS` — optional async-run limit; default `3`; preview uses `1`.
-- `NANOU_MAX_SESSIONS` — optional browser-session cap (1–8); default `8`; preview uses `2`.
+- `NANOU_MAX_SESSIONS` — optional browser-session cap (1–8); default `8`; preview uses `1` to reduce memory pressure.
 - `NANOU_BROWSER_CDP_URL` — optional loopback-only Chrome/Opera DevTools endpoint for local tests. Never expose a CDP port publicly; otherwise the service launches Chromium itself.
 
 ## Local development and tests
@@ -37,11 +37,17 @@ Keep the server bound to loopback during local tests. The `/` page sends its tok
 
 ## Render free preview
 
-The repository root `render.yaml` configures `nanou-browser-agent` from the root `Dockerfile`, a generated `NANOU_AGENT_API_KEY`, a low-memory concurrency limit, and `/healthz` health checks. The repository owner must create the Blueprint and authorize Render to access this repository; source code cannot grant that account permission. Do not claim the service exists until a Render deployment with a public HTTPS hostname is visible and the health/auth/MCP probes pass.
+The repository root `render.yaml` configures `nanou-browser-agent` from the root `Dockerfile`, a generated `NANOU_AGENT_API_KEY`, one concurrent autonomous run, one browser session, and `/healthz` health checks. It defaults the web control page to OpenRouter's `openrouter/free` model and prompts for `NANOU_LLM_API_KEY` during initial Blueprint setup. Render Free service creation still requires the owner to authorize Render to access this repository; source code cannot grant that account permission. Do not claim the service exists until a Render deployment with a public HTTPS hostname is visible and the health/auth/MCP probes pass.
 
 After deployment, obtain the token through Render's protected environment UI and configure it in the MCP client as bearer authentication. Never post it in ChatGPT, issues, logs, screenshots or commits. `NANOU_LLM_API_KEY` is optional and should only be enabled when the separate server-side autonomous runner is needed. Without it, an external ChatGPT/MCP-capable LLM can orchestrate direct browser tools.
 
 **Preview limitations:** free instances can sleep, Chromium can exceed the 512 MB memory budget, and session/run registries are in-process and are lost on restart. Do not call it production-ready until memory, cold start, restarts, free-tier sleeping and session behaviour have been tested.
+
+## Free-only web UI operation
+
+The web control page's autonomous task endpoint needs `NANOU_LLM_API_KEY`. The Render Blueprint uses OpenRouter's OpenAI-compatible API (`https://openrouter.ai/api/v1`) and the `openrouter/free` router by default. OpenRouter currently prices this free router at $0 per prompt/completion token; its Free tier is capped at 50 free-model requests/day and 20/minute, subject to upstream provider availability. See [official router details](https://openrouter.ai/openrouter/free/) and [pricing/limits](https://openrouter.ai/pricing).
+
+Create a key at [OpenRouter API Keys](https://openrouter.ai/settings/keys) and place it only into Render's protected `NANOU_LLM_API_KEY` prompt/Environment settings. Never commit it or paste it into ChatGPT. Do not purchase credits or select a paid model. This provides a no-cost model path for the hosted Nanou Browser website, but it does not unlock full custom MCP access on a ChatGPT Free account.
 
 ## ChatGPT custom-MCP connection
 
