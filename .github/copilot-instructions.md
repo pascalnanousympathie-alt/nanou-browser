@@ -1,6 +1,6 @@
 # Nanou Browser repository instructions
 
-Read root `AGENTS.md` first. This repository's active deliverable is the TinyFish-style **web browser agent service and remote MCP endpoint**, not an Android APK. Treat `app/` and Gradle as a legacy/experimental Android alternative only; do not run `assembleDebug`, sign/package/upload an APK, or spend time on an Android emulator unless the user explicitly changes scope.
+Read root `AGENTS.md` first. This repository's active deliverable is an independent Playwright/Chromium **web browser agent service and remote MCP endpoint**, not an Android APK. It has no external browser-automation vendor dependency. Treat `app/` and Gradle as a legacy/experimental Android alternative only; do not run `assembleDebug`, sign/package/upload an APK, or spend time on an Android emulator unless the user explicitly changes scope.
 
 Keep the separate products straight: Nanou Browser = browser automation website + hosted MCP; Nanoumada = web-based AI coding workspace; LudoMada = Android Ludo game plus backend. Never reuse another project's repo, deployment project, credentials, CI runner or feature flags.
 
