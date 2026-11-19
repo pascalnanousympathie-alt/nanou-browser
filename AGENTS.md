@@ -2,7 +2,7 @@
 
 ## Identity, scope and non-negotiable output
 
-- **This repository's active target is a TinyFish-style browser-agent WEBSITE/SERVICE**: web control page + hosted Playwright browser service + remote Streamable HTTP MCP endpoint at `/mcp`, so compatible ChatGPT accounts can call its tools.
+- **This repository's active target is an independent Playwright browser-agent WEBSITE/SERVICE**: web control page + hosted Playwright/Chromium browser service + remote Streamable HTTP MCP endpoint at `/mcp`. It does not depend on an external browser-automation vendor, account, API, or SDK.
 - It is not an Android-APK delivery task. The root `app/` and Gradle files are a separate legacy/experimental Android browser implementation. Do **not** build, sign, install, upload or discuss an APK as the requested deliverable unless the user explicitly asks to switch scope to Android.
 - Nanoumada is a separate browser-based AI coding workspace/web app. LudoMada is a separate Android Ludo game and backend. Do not copy their code, credentials, config, deployment targets or runner into this repository.
 - Before each change, read the current request and this file, check the exact repo/branch/commit/PR, and map the change to the web/MCP acceptance criteria. Correct project identity takes precedence over stale README text, inherited Gradle files or old tool output.
