@@ -14,7 +14,11 @@ This Blueprint is configured for Render's free preview. Because this repository 
 - **Optional autonomous runner:** asynchronous `POST /api/agent/runs`, status and cancel endpoints. This requires a separate model-provider key. ChatGPT can orchestrate individual MCP tools without that optional key.
 - **Hosting target:** the free Render Blueprint in `render.yaml`, as a preview only until runtime reliability is proven.
 
-## Browser runtime and Opera companion\n\nNanou Browser runs browser tasks in its own Playwright-managed Chromium session. The Opera Browser Connector is optional and separate: when connected, it can help inspect Opera tabs, page content, screenshots, and navigation. It is not the Playwright/CDP endpoint. `NANOU_BROWSER_CDP_URL` must point to a genuine loopback browser DevTools/CDP endpoint, not the connector bridge at port 18765.\n\n## What counts as done
+## Browser runtime and Opera companion
+
+Nanou Browser runs browser tasks in its own Playwright-managed Chromium session. The Opera Browser Connector is optional and separate: when connected, it can help inspect Opera tabs, page content, screenshots, and navigation. It is not the Playwright/CDP endpoint. `NANOU_BROWSER_CDP_URL` must point to a genuine loopback browser DevTools/CDP endpoint, not the connector bridge at port 18765.
+
+## What counts as done
 
 1. Agent Service tests and security checks pass on the exact commit.
 2. The service builds and starts in the intended Docker/hosting environment.
