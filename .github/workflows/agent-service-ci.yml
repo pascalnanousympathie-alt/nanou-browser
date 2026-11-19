@@ -1,0 +1,56 @@
+name: Nanou Browser Agent Service CI
+
+on:
+  push:
+    branches: [main, feat/cloud-browser-agent-mcp]
+    paths:
+      - "agent-service/**"
+      - "Dockerfile"
+      - "render.yaml"
+      - ".github/workflows/agent-service-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "agent-service/**"
+      - "Dockerfile"
+      - "render.yaml"
+      - ".github/workflows/agent-service-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nanou-browser-agent-ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # Dedicated ARM64 runner in Debian PRoot; never use the separate LudoMada runner.
+    runs-on: [self-hosted, Linux, ARM64, nanou-browser-agent]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare persistent isolated Python environment (Debian ARM64)
+        shell: bash
+        run: |
+          set -euo pipefail
+          VENV="$HOME/.cache/nanou-browser-runner/venv-py313"
+          mkdir -p "$(dirname "$VENV")"
+          test -x /usr/bin/python3
+          /usr/bin/python3 --version
+          if [ ! -x "$VENV/bin/python" ]; then
+            /usr/bin/python3 -m venv "$VENV"
+          fi
+          echo "$VENV/bin" >> "$GITHUB_PATH"
+          echo "VIRTUAL_ENV=$VENV" >> "$GITHUB_ENV"
+          echo "NANOU_BROWSER_VENV=$VENV" >> "$GITHUB_ENV"
+          "$VENV/bin/python" --version
+      - name: Install service dependencies
+        run: |
+          "$NANOU_BROWSER_VENV/bin/python" -m pip install -r agent-service/requirements.txt
+      - name: Run safety and API tests
+        env:
+          PYTHONPATH: agent-service
+        run: |
+          "$NANOU_BROWSER_VENV/bin/python" -m pytest -q agent-service/tests

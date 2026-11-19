@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: nanou-browser-agent
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: feat/cloud-browser-agent-mcp
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    # This service is launched from the Deploy to Render button.
+    # Require explicit/manual redeploys so later source pushes don't deploy silently.
+    autoDeployTrigger: off
+    envVars:
+      - key: NANOU_AGENT_API_KEY
+        generateValue: true
+      - key: NANOU_LLM_API_KEY
+        sync: false
+      - key: NANOU_LLM_BASE_URL
+        value: https://openrouter.ai/api/v1
+      - key: NANOU_LLM_MODEL
+        value: openrouter/free
+      - key: NANOU_MAX_CONCURRENT_RUNS
+        value: "1"
+      - key: NANOU_MAX_SESSIONS
+        value: "1"

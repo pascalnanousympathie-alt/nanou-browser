@@ -2,7 +2,7 @@ plugins { id 'com.android.application' }
 android {
     namespace 'com.nanou.browser'
     compileSdk 35
-    buildToolsVersion '35.0.0'
+    buildToolsVersion '34.0.0'
     defaultConfig {
         applicationId 'com.nanou.browser'
         minSdk 26

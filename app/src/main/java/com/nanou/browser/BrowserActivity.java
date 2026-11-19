@@ -327,7 +327,7 @@ public final class BrowserActivity extends Activity {
             settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
             CookieManager.getInstance().setAcceptThirdPartyCookies(web, false);
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) web.setSafeBrowsingEnabled(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) settings.setSafeBrowsingEnabled(true);
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -869,26 +869,6 @@ public final class BrowserActivity extends Activity {
             return true;
         }
         return super.onKeyDown(keyCode, event);
-    }
-
-    private void openHome() {
-        if (activeTab == null) addTab(true);
-        else loadHome(activeTab);
-    }
-
-    private void goBack() {
-        if (activeTab != null && activeTab.webView.canGoBack()) activeTab.webView.goBack();
-        else openHome();
-    }
-
-    private void goForward() {
-        if (activeTab != null && activeTab.webView.canGoForward()) activeTab.webView.goForward();
-    }
-
-    private void reload() {
-        if (activeTab == null) return;
-        if (BrowserUrlResolver.isHomeUrl(activeTab.url)) loadHome(activeTab);
-        else activeTab.webView.reload();
     }
 
     @Override
