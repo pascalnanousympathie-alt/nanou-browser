@@ -338,6 +338,74 @@ def test_search_options_normalize_recency_and_category():
     assert validate_search_options("any", "research") == ("any", "research")
 
 
+def test_browser_route_guard_blocks_private_and_unsafe_requests(monkeypatch):
+    from server import BrowserPool
+
+    class FakeRequest:
+        def __init__(self, url):
+            self.url = url
+
+    class FakeRoute:
+        def __init__(self, url):
+            self.request = FakeRequest(url)
+            self.action = None
+
+        async def abort(self, reason):
+            self.action = ("abort", reason)
+
+        async def continue_(self):
+            self.action = ("continue", None)
+
+    async def host_is_public(host):
+        return host == "example.com"
+
+    async def exercise():
+        pool = BrowserPool()
+        results = {}
+        for url in (
+            "http://169.254.169.254/latest/meta-data/",
+            "http://127.0.0.1:9222/json",
+            "file:///etc/passwd",
+            "ftp://example.com/file",
+        ):
+            route = FakeRoute(url)
+            await pool._guard_route(route)
+            results[url] = route.action
+
+        for url in (
+            "https://example.com/public",
+            "data:text/plain,hello",
+            "blob:https://example.com/session-id",
+            "about:blank",
+        ):
+            route = FakeRoute(url)
+            await pool._guard_route(route)
+            results[url] = route.action
+        return results
+
+    monkeypatch.setattr(server, "_host_is_public", host_is_public)
+    results = asyncio.run(exercise())
+
+    assert all(
+        results[url] == ("abort", "blockedbyclient")
+        for url in (
+            "http://169.254.169.254/latest/meta-data/",
+            "http://127.0.0.1:9222/json",
+            "file:///etc/passwd",
+            "ftp://example.com/file",
+        )
+    )
+    assert all(
+        results[url] == ("continue", None)
+        for url in (
+            "https://example.com/public",
+            "data:text/plain,hello",
+            "blob:https://example.com/session-id",
+            "about:blank",
+        )
+    )
+
+
 def test_public_dns_decision_is_not_cached(monkeypatch):
     answers = []
 
