@@ -104,6 +104,8 @@ def test_mcp_control_endpoint_fails_closed_without_token(monkeypatch):
 
 
 def test_authenticated_mcp_initialize_and_tools_list(monkeypatch):
+    import json
+
     monkeypatch.setenv("NANOU_AGENT_API_KEY", "test-only-token")
     with TestClient(app) as client:
         headers = {
@@ -112,23 +114,26 @@ def test_authenticated_mcp_initialize_and_tools_list(monkeypatch):
             "Content-Type": "application/json",
         }
 
-        def rpc_payload(response):
-            assert response.status_code == 200, response.text
-            if response.headers.get("content-type", "").startswith("application/json"):
-                return response.json()
-            data_lines = [
-                line[6:].strip()
-                for line in response.text.splitlines()
-                if line.startswith("data: ")
-            ]
-            assert data_lines, response.text
-            import json
-            return json.loads(data_lines[-1])
+        def rpc_post(request_headers, payload):
+            with client.stream(
+                "POST", "/mcp", headers=request_headers, json=payload, timeout=15.0
+            ) as response:
+                assert response.status_code == 200, response.read().decode("utf-8", "replace")
+                response_headers = dict(response.headers)
+                if response.headers.get("content-type", "").startswith("application/json"):
+                    message = response.json()
+                else:
+                    message = None
+                    for line in response.iter_lines():
+                        if line.startswith("data: "):
+                            message = json.loads(line[6:].strip())
+                            break
+                    assert message is not None, "MCP SSE response did not contain a data event"
+                return message, response_headers
 
-        initialized = client.post(
-            "/mcp",
-            headers=headers,
-            json={
+        init_message, init_headers = rpc_post(
+            headers,
+            {
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "initialize",
@@ -139,24 +144,21 @@ def test_authenticated_mcp_initialize_and_tools_list(monkeypatch):
                 },
             },
         )
-        init_message = rpc_payload(initialized)
         assert init_message["id"] == 1
         assert "result" in init_message
         assert init_message["result"]["protocolVersion"]
         assert init_message["result"]["serverInfo"]["name"]
 
-        session_id = initialized.headers.get("mcp-session-id")
         tools_headers = dict(headers)
         tools_headers["MCP-Protocol-Version"] = init_message["result"]["protocolVersion"]
+        session_id = init_headers.get("mcp-session-id")
         if session_id:
             tools_headers["MCP-Session-Id"] = session_id
 
-        listed = client.post(
-            "/mcp",
-            headers=tools_headers,
-            json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+        tools_message, _ = rpc_post(
+            tools_headers,
+            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
         )
-        tools_message = rpc_payload(listed)
         assert tools_message["id"] == 2
         assert "result" in tools_message
         tool_names = {tool["name"] for tool in tools_message["result"]["tools"]}
