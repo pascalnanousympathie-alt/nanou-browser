@@ -3,6 +3,7 @@ import json
 import pytest
 
 import server
+from starlette.testclient import TestClient
 from credential_approval import CredentialApprovalRegistry
 from credential_vault import (
     BrowserCredential,
