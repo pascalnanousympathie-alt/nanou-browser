@@ -1,10 +1,7 @@
 import asyncio
 import json
-from dataclasses import FrozenInstanceError
-
 import pytest
 
-import credential_vault
 import server
 from credential_vault import (
     BrowserCredential,
@@ -48,6 +45,12 @@ def test_credential_repr_does_not_expose_password_or_username():
     assert "never-return-this-password" not in rendered
     assert "nanou-user@example.test" not in rendered
     assert credential.credential_id == "GITHUB"
+
+def test_credential_values_preserve_intentional_whitespace():
+    env = _env()
+    env["NANOU_CREDENTIAL_GITHUB_PASSWORD"] = "  password with spaces  "
+    credential = load_browser_credential("GITHUB", env)
+    assert credential.password == "  password with spaces  "
 
 
 def test_credential_requires_all_values_and_safe_origin():
