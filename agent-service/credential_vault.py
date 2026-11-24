@@ -9,7 +9,6 @@ from urllib.parse import urlsplit
 
 _CREDENTIAL_ID = re.compile(r"^[A-Z][A-Z0-9_]{0,31}$")
 _ENV_KEY = re.compile(r"^NANOU_CREDENTIAL_([A-Z][A-Z0-9_]*)_(ORIGIN|USERNAME|PASSWORD|USERNAME_SELECTOR|PASSWORD_SELECTOR)$")
-_FIELDS = ("ORIGIN", "USERNAME", "PASSWORD", "USERNAME_SELECTOR", "PASSWORD_SELECTOR")
 
 
 class CredentialConfigurationError(ValueError):
@@ -62,10 +61,10 @@ def normalize_https_origin(value: str) -> str:
 
 
 def _read_required(env: dict[str, str] | os._Environ[str], key: str) -> str:
-    value = str(env.get(key, "")).strip()
-    if not value:
+    value = str(env.get(key, ""))
+    if not value.strip():
         raise CredentialConfigurationError("Saved credential is incomplete or not configured.")
-    return value
+    return value.strip() if key.endswith(("_ORIGIN", "_USERNAME_SELECTOR", "_PASSWORD_SELECTOR")) else value
 
 
 def load_browser_credential(
