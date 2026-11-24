@@ -3,6 +3,7 @@ import json
 import pytest
 
 import server
+from credential_approval import CredentialApprovalRegistry
 from credential_vault import (
     BrowserCredential,
     CredentialConfigurationError,
@@ -158,6 +159,7 @@ def test_saved_login_fill_requires_exact_origin_and_never_submits(monkeypatch):
 
     monkeypatch.setattr(server, "_assert_public_url", assert_public)
     monkeypatch.setattr(server.pool, "get", lambda _session_id: session)
+    monkeypatch.setattr(server.credential_approvals, "consume", lambda _session_id, _credential_id: True)
     result = asyncio.run(server._fill_saved_login("session-1", "GITHUB"))
 
     assert result["username_filled"] is True
@@ -194,3 +196,109 @@ def test_saved_login_fill_refuses_another_origin(monkeypatch):
     monkeypatch.setattr(server.pool, "get", lambda _session_id: FakeSession())
     with pytest.raises(ValueError, match="allowlisted origin"):
         asyncio.run(server._fill_saved_login("session-1", "GITHUB"))
+
+
+
+def test_approval_registry_is_one_use_and_scoped_to_session_and_credential():
+    registry = CredentialApprovalRegistry(ttl_seconds=90)
+    assert registry.approve("session-1", "GITHUB") == {
+        "approved": True,
+        "expires_in_seconds": 90,
+        "uses": 1,
+    }
+    assert registry.consume("session-2", "GITHUB") is False
+    assert registry.consume("session-1", "OTHER") is False
+    assert registry.consume("session-1", "GITHUB") is True
+    assert registry.consume("session-1", "GITHUB") is False
+
+
+def test_unapproved_saved_login_is_refused_before_any_secret_fill(monkeypatch):
+    credential = BrowserCredential(
+        credential_id="GITHUB",
+        origin="https://github.com",
+        username="user-for-test",
+        password="password-for-test",
+        username_selector="input[name='login']",
+        password_selector="input[name='password']",
+    )
+    monkeypatch.setattr(server, "load_browser_credential", lambda _credential_id: credential)
+
+    class FakePage:
+        url = "https://github.com/login"
+        def locator(self, _selector):
+            pytest.fail("The agent must refuse before touching credential fields.")
+
+    class FakeSession:
+        def __init__(self):
+            self.lock = asyncio.Lock()
+            self.page = FakePage()
+
+    monkeypatch.setattr(server.pool, "get", lambda _session_id: FakeSession())
+    monkeypatch.setattr(server, "_assert_public_url", lambda _url: asyncio.sleep(0))
+    monkeypatch.setattr(server.credential_approvals, "consume", lambda _session_id, _credential_id: False)
+
+    with pytest.raises(ValueError, match="one-time approval"):
+        asyncio.run(server._fill_saved_login("session-unapproved", "GITHUB"))
+
+
+def test_credential_approval_http_route_requires_bearer_and_exact_origin(monkeypatch):
+    credential = BrowserCredential(
+        credential_id="GITHUB",
+        origin="https://github.com",
+        username="user-for-test",
+        password="password-for-test",
+        username_selector="input[name='login']",
+        password_selector="input[name='password']",
+    )
+    class FakePage:
+        url = "https://github.com/login"
+    class FakeSession:
+        page = FakePage()
+
+    monkeypatch.setenv("NANOU_AGENT_API_KEY", "test-only-credential-token")
+    monkeypatch.setattr(server, "load_browser_credential", lambda _credential_id: credential)
+    monkeypatch.setattr(server.pool, "get", lambda _session_id: FakeSession())
+    async def assert_public(_url):
+        return _url
+    monkeypatch.setattr(server, "_assert_public_url", assert_public)
+
+    client = TestClient(server.app)
+    payload = {"session_id": "session-approval-route", "credential_id": "GITHUB"}
+    assert client.post("/api/credentials/authorize", json=payload).status_code == 401
+    response = client.post(
+        "/api/credentials/authorize",
+        headers={"Authorization": "Bearer test-only-credential-token"},
+        json=payload,
+    )
+    assert response.status_code == 200
+    assert response.json() == {"approved": True, "expires_in_seconds": 90, "uses": 1}
+    assert server.credential_approvals.consume("session-approval-route", "GITHUB") is True
+
+
+def test_credential_approval_http_route_rejects_other_origin(monkeypatch):
+    credential = BrowserCredential(
+        credential_id="GITHUB",
+        origin="https://github.com",
+        username="user-for-test",
+        password="password-for-test",
+        username_selector="input[name='login']",
+        password_selector="input[name='password']",
+    )
+    class FakePage:
+        url = "https://evil.example/login"
+    class FakeSession:
+        page = FakePage()
+
+    monkeypatch.setenv("NANOU_AGENT_API_KEY", "test-only-credential-token")
+    monkeypatch.setattr(server, "load_browser_credential", lambda _credential_id: credential)
+    monkeypatch.setattr(server.pool, "get", lambda _session_id: FakeSession())
+    client = TestClient(server.app)
+    response = client.post(
+        "/api/credentials/authorize",
+        headers={"Authorization": "Bearer test-only-credential-token"},
+        json={"session_id": "session-wrong-origin", "credential_id": "GITHUB"},
+    )
+    assert response.status_code == 400
+    assert "allowlisted origin" in response.json()["error"]
+
+
