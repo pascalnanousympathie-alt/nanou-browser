@@ -2,14 +2,14 @@ name: Nanou Browser Agent Service CI
 
 on:
   push:
-    branches: [main, feat/cloud-browser-agent-mcp, fix/render-healthcheck-head-20261124]
+    branches: [main, feat/cloud-browser-agent-mcp]
     paths:
       - "agent-service/**"
       - "Dockerfile"
       - "render.yaml"
       - ".github/workflows/agent-service-ci.yml"
   pull_request:
-    branches: [main]
+    branches: [main, feat/cloud-browser-agent-mcp]
     paths:
       - "agent-service/**"
       - "Dockerfile"
