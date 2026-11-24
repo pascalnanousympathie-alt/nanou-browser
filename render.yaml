@@ -1,15 +1,14 @@
 services:
   - type: web
-    name: nanou-browser-agent
+    name: nanou-browser
     runtime: docker
     plan: free
-    region: singapore
+    region: oregon
     branch: feat/cloud-browser-agent-mcp
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /healthz
-    # This service is launched from the Deploy to Render button.
-    # Require explicit/manual redeploys so later source pushes don't deploy silently.
+    # Keep the live preview aligned with this Blueprint and require deliberate deploys.
     autoDeployTrigger: off
     envVars:
       - key: NANOU_AGENT_API_KEY
