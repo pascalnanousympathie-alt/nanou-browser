@@ -20,6 +20,24 @@ This is the primary Nanou Browser web service. It provides a browser-based contr
 - `NANOU_MAX_SESSIONS` — optional browser-session cap (1–8); default `8`; preview uses `1` to reduce memory pressure.
 - `NANOU_BROWSER_CDP_URL` — optional loopback-only Chrome/Opera DevTools endpoint for local tests. Never expose a CDP port publicly; otherwise the service launches Chromium itself.
 
+## Scoped saved browser credentials
+
+Nanou Browser can optionally fill a saved website login without exposing the username or password to the AI model. Configure each credential only in the hosting provider's protected environment/secret settings; never place actual values in Git, this README, a browser task, issue comments, screenshots or ChatGPT.
+
+For credential ID `GITHUB`, configure these five variables in the host secret store:
+
+- `NANOU_CREDENTIAL_GITHUB_ORIGIN` — exact HTTPS origin only, such as `https://github.com` (no path, query, fragment or embedded username/password).
+- `NANOU_CREDENTIAL_GITHUB_USERNAME` — account username/email.
+- `NANOU_CREDENTIAL_GITHUB_PASSWORD` — account password.
+- `NANOU_CREDENTIAL_GITHUB_USERNAME_SELECTOR` — owner-configured CSS selector for one visible text/email input.
+- `NANOU_CREDENTIAL_GITHUB_PASSWORD_SELECTOR` — owner-configured CSS selector for one visible password input.
+
+IDs use uppercase letters, digits and underscores. Each configured credential is restricted to its exact HTTPS origin; the hostname is checked against public DNS at use time. The MCP tools `browser_credential_status` and `browser_fill_saved_login` expose only ID/origin metadata and a fill operation. They never return the credential values, accept arbitrary selectors from the model, click Submit, or press Enter. Incomplete or invalid credential configurations fail closed.
+
+Each use now requires a separate one-time owner approval: create the browser session, open the Nanou Browser control page, enter the session ID and saved credential ID in **Approve one saved login**, and click the approval button. The approval is bound to that exact session/credential pair, expires after 90 seconds, and can be consumed once. The MCP fill tool refuses to type unless this approval exists. Do not configure or automate one-time passwords, MFA/recovery codes, banking/payment credentials, or credentials for sites you do not control or have permission to access. The website necessarily receives the values when its configured login fields are filled; use this only for trusted origins. Website scripts may react to input events, so the fill tool does not guarantee the remote page itself will refrain from reacting.
+
+API keys and service bearer tokens remain server-side environment secrets for fixed service integrations. The AI model cannot enumerate or read arbitrary process environment variables. New API integrations must be added as narrowly scoped server-side operations with fixed destination allowlists, least-privilege tokens, response redaction and separate approval for writes.
+
 ## Local development and tests
 
 ```bash

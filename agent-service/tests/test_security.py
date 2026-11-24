@@ -65,6 +65,9 @@ def test_health_is_public_but_control_api_fails_closed(monkeypatch):
     client = TestClient(app)
     assert client.get("/healthz").status_code == 200
     assert client.get("/").status_code == 200
+    # HEAD probes are used by some hosting/monitoring checks and must remain public too.
+    assert client.head("/healthz").status_code == 200
+    assert client.head("/").status_code == 200
     response = client.post(
         "/api/agent/runs",
         json={"goal": "find a contact email", "start_url": "https://example.com"},
@@ -98,6 +101,52 @@ def test_mcp_control_endpoint_fails_closed_without_token(monkeypatch):
     response = client.get("/mcp")
     assert response.status_code == 503
     assert "NANOU_AGENT_API_KEY" in response.json()["error"]
+
+
+def test_authenticated_mcp_initialize_and_tools_list(monkeypatch):
+    import asyncio
+
+    import httpx
+    from mcp.client.session import ClientSession
+    from mcp.client.streamable_http import streamable_http_client
+    from server import mcp_app
+
+    monkeypatch.setenv("NANOU_AGENT_API_KEY", "test-only-token")
+
+    async def exercise_mcp_client():
+        # Start the same FastMCP lifespan used by the deployed Starlette app.
+        async with mcp_app.router.lifespan_context(mcp_app):
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+                headers={"Authorization": "Bearer test-only-token"},
+                timeout=httpx.Timeout(15.0, read=30.0),
+            ) as http_client:
+                async with streamable_http_client(
+                    "http://testserver/mcp",
+                    http_client=http_client,
+                    terminate_on_close=True,
+                ) as (read_stream, write_stream, get_session_id):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        initialized = await session.initialize()
+                        assert initialized.protocolVersion
+                        assert initialized.serverInfo.name
+                        assert get_session_id(), "MCP initialize did not establish a stateful session"
+
+                        listed = await session.list_tools()
+                        tool_names = {tool.name for tool in listed.tools}
+                        assert {
+                            "browser_session_create",
+                            "browser_navigate",
+                            "browser_snapshot",
+                            "browser_session_close",
+                            "browser_credential_status",
+                            "browser_fill_saved_login",
+                        } <= tool_names
+
+    asyncio.run(exercise_mcp_client())
+
 
 
 def test_mcp_control_endpoint_rejects_wrong_bearer_token(monkeypatch):
@@ -289,6 +338,74 @@ def test_search_options_reject_unsupported_filters(recency, category):
 def test_search_options_normalize_recency_and_category():
     assert validate_search_options(" WEEK ", "News") == ("week", "news")
     assert validate_search_options("any", "research") == ("any", "research")
+
+
+def test_browser_route_guard_blocks_private_and_unsafe_requests(monkeypatch):
+    from server import BrowserPool
+
+    class FakeRequest:
+        def __init__(self, url):
+            self.url = url
+
+    class FakeRoute:
+        def __init__(self, url):
+            self.request = FakeRequest(url)
+            self.action = None
+
+        async def abort(self, reason):
+            self.action = ("abort", reason)
+
+        async def continue_(self):
+            self.action = ("continue", None)
+
+    async def host_is_public(host):
+        return host == "example.com"
+
+    async def exercise():
+        pool = BrowserPool()
+        results = {}
+        for url in (
+            "http://169.254.169.254/latest/meta-data/",
+            "http://127.0.0.1:9222/json",
+            "file:///etc/passwd",
+            "ftp://example.com/file",
+        ):
+            route = FakeRoute(url)
+            await pool._guard_route(route)
+            results[url] = route.action
+
+        for url in (
+            "https://example.com/public",
+            "data:text/plain,hello",
+            "blob:https://example.com/session-id",
+            "about:blank",
+        ):
+            route = FakeRoute(url)
+            await pool._guard_route(route)
+            results[url] = route.action
+        return results
+
+    monkeypatch.setattr(server, "_host_is_public", host_is_public)
+    results = asyncio.run(exercise())
+
+    assert all(
+        results[url] == ("abort", "blockedbyclient")
+        for url in (
+            "http://169.254.169.254/latest/meta-data/",
+            "http://127.0.0.1:9222/json",
+            "file:///etc/passwd",
+            "ftp://example.com/file",
+        )
+    )
+    assert all(
+        results[url] == ("continue", None)
+        for url in (
+            "https://example.com/public",
+            "data:text/plain,hello",
+            "blob:https://example.com/session-id",
+            "about:blank",
+        )
+    )
 
 
 def test_public_dns_decision_is_not_cached(monkeypatch):
