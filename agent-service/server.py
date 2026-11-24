@@ -764,6 +764,11 @@ async def _fill_saved_login(session_id: str, credential_id: str) -> dict[str, An
             raise ValueError("Current page is not on this credential's allowlisted origin.")
         await _assert_public_url(credential.origin + "/")
 
+        # Consume the human approval before inspecting or interacting with any
+        # credential field. A rejected request must not touch those locators.
+        if not credential_approvals.consume(session_id, credential_id):
+            raise ValueError("Explicit one-time approval is required in the Nanou Browser control page.")
+
         username_locator = session.page.locator(credential.username_selector)
         password_locator = session.page.locator(credential.password_selector)
         if await username_locator.count() != 1 or await password_locator.count() != 1:
@@ -782,8 +787,6 @@ async def _fill_saved_login(session_id: str, credential_id: str) -> dict[str, An
             if not await locator.is_visible() or not await locator.is_enabled():
                 raise ValueError("Configured credential inputs must be visible and enabled.")
 
-        if not credential_approvals.consume(session_id, credential_id):
-            raise ValueError("Explicit one-time approval is required in the Nanou Browser control page.")
         await username_locator.fill(credential.username, timeout=8000)
         if _page_https_origin(session.page.url) != credential.origin:
             raise ValueError("Page origin changed while applying the saved login.")
