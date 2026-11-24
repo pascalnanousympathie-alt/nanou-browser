@@ -104,65 +104,47 @@ def test_mcp_control_endpoint_fails_closed_without_token(monkeypatch):
 
 
 def test_authenticated_mcp_initialize_and_tools_list(monkeypatch):
-    import json
+    import asyncio
+
+    import httpx
+    from mcp.client.session import ClientSession
+    from mcp.client.streamable_http import streamable_http_client
+    from server import mcp_app
 
     monkeypatch.setenv("NANOU_AGENT_API_KEY", "test-only-token")
-    with TestClient(app) as client:
-        headers = {
-            "Authorization": "Bearer test-only-token",
-            "Accept": "application/json, text/event-stream",
-            "Content-Type": "application/json",
-        }
 
-        def rpc_post(request_headers, payload):
-            with client.stream(
-                "POST", "/mcp", headers=request_headers, json=payload, timeout=15.0
-            ) as response:
-                assert response.status_code == 200, response.read().decode("utf-8", "replace")
-                response_headers = dict(response.headers)
-                if response.headers.get("content-type", "").startswith("application/json"):
-                    message = response.json()
-                else:
-                    message = None
-                    for line in response.iter_lines():
-                        if line.startswith("data: "):
-                            message = json.loads(line[6:].strip())
-                            break
-                    assert message is not None, "MCP SSE response did not contain a data event"
-                return message, response_headers
+    async def exercise_mcp_client():
+        # Start the same FastMCP lifespan used by the deployed Starlette app.
+        async with mcp_app.router.lifespan_context(mcp_app):
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://testserver",
+                headers={"Authorization": "Bearer test-only-token"},
+                timeout=httpx.Timeout(15.0, read=30.0),
+            ) as http_client:
+                async with streamable_http_client(
+                    "http://testserver/mcp",
+                    http_client=http_client,
+                    terminate_on_close=True,
+                ) as (read_stream, write_stream, get_session_id):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        initialized = await session.initialize()
+                        assert initialized.protocolVersion
+                        assert initialized.serverInfo.name
+                        assert get_session_id(), "MCP initialize did not establish a stateful session"
 
-        init_message, init_headers = rpc_post(
-            headers,
-            {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": "2025-03-26",
-                    "capabilities": {},
-                    "clientInfo": {"name": "nanou-browser-ci", "version": "1.0"},
-                },
-            },
-        )
-        assert init_message["id"] == 1
-        assert "result" in init_message
-        assert init_message["result"]["protocolVersion"]
-        assert init_message["result"]["serverInfo"]["name"]
+                        listed = await session.list_tools()
+                        tool_names = {tool.name for tool in listed.tools}
+                        assert {
+                            "browser_session_create",
+                            "browser_navigate",
+                            "browser_snapshot",
+                            "browser_session_close",
+                        } <= tool_names
 
-        tools_headers = dict(headers)
-        tools_headers["MCP-Protocol-Version"] = init_message["result"]["protocolVersion"]
-        session_id = init_headers.get("mcp-session-id")
-        if session_id:
-            tools_headers["MCP-Session-Id"] = session_id
+    asyncio.run(exercise_mcp_client())
 
-        tools_message, _ = rpc_post(
-            tools_headers,
-            {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
-        )
-        assert tools_message["id"] == 2
-        assert "result" in tools_message
-        tool_names = {tool["name"] for tool in tools_message["result"]["tools"]}
-        assert {"browser_session_create", "browser_navigate", "browser_snapshot", "browser_session_close"} <= tool_names
 
 
 def test_mcp_control_endpoint_rejects_wrong_bearer_token(monkeypatch):
