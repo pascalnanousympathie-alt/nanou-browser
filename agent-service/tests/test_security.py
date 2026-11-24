@@ -141,6 +141,8 @@ def test_authenticated_mcp_initialize_and_tools_list(monkeypatch):
                             "browser_navigate",
                             "browser_snapshot",
                             "browser_session_close",
+                            "browser_credential_status",
+                            "browser_fill_saved_login",
                         } <= tool_names
 
     asyncio.run(exercise_mcp_client())
