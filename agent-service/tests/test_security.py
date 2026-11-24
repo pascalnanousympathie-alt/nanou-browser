@@ -103,6 +103,66 @@ def test_mcp_control_endpoint_fails_closed_without_token(monkeypatch):
     assert "NANOU_AGENT_API_KEY" in response.json()["error"]
 
 
+def test_authenticated_mcp_initialize_and_tools_list(monkeypatch):
+    monkeypatch.setenv("NANOU_AGENT_API_KEY", "test-only-token")
+    client = TestClient(app)
+    headers = {
+        "Authorization": "Bearer test-only-token",
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json",
+    }
+
+    def rpc_payload(response):
+        assert response.status_code == 200, response.text
+        if response.headers.get("content-type", "").startswith("application/json"):
+            return response.json()
+        data_lines = [
+            line[6:].strip()
+            for line in response.text.splitlines()
+            if line.startswith("data: ")
+        ]
+        assert data_lines, response.text
+        import json
+        return json.loads(data_lines[-1])
+
+    initialized = client.post(
+        "/mcp",
+        headers=headers,
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "nanou-browser-ci", "version": "1.0"},
+            },
+        },
+    )
+    init_message = rpc_payload(initialized)
+    assert init_message["id"] == 1
+    assert "result" in init_message
+    assert init_message["result"]["protocolVersion"]
+    assert init_message["result"]["serverInfo"]["name"]
+
+    session_id = initialized.headers.get("mcp-session-id")
+    tools_headers = dict(headers)
+    tools_headers["MCP-Protocol-Version"] = init_message["result"]["protocolVersion"]
+    if session_id:
+        tools_headers["MCP-Session-Id"] = session_id
+
+    listed = client.post(
+        "/mcp",
+        headers=tools_headers,
+        json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+    )
+    tools_message = rpc_payload(listed)
+    assert tools_message["id"] == 2
+    assert "result" in tools_message
+    tool_names = {tool["name"] for tool in tools_message["result"]["tools"]}
+    assert {"browser_session_create", "browser_navigate", "browser_snapshot", "browser_session_close"} <= tool_names
+
+
 def test_mcp_control_endpoint_rejects_wrong_bearer_token(monkeypatch):
     monkeypatch.setenv("NANOU_AGENT_API_KEY", "test-only-token")
     client = TestClient(app)
