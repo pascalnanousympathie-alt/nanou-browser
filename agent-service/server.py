@@ -1336,7 +1336,7 @@ class BearerGuard:
             return
         path = scope.get("path", "/")
         method = scope.get("method", "GET").upper()
-        if path in ("/", "/healthz") and method == "GET":
+        if path in ("/", "/healthz") and method in {"GET", "HEAD"}:
             await self.inner(scope, receive, send)
             return
         expected = _api_key()
