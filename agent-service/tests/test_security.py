@@ -65,6 +65,9 @@ def test_health_is_public_but_control_api_fails_closed(monkeypatch):
     client = TestClient(app)
     assert client.get("/healthz").status_code == 200
     assert client.get("/").status_code == 200
+    # HEAD probes are used by some hosting/monitoring checks and must remain public too.
+    assert client.head("/healthz").status_code == 200
+    assert client.head("/").status_code == 200
     response = client.post(
         "/api/agent/runs",
         json={"goal": "find a contact email", "start_url": "https://example.com"},
