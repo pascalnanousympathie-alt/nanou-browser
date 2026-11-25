@@ -957,3 +957,36 @@ def test_run_registry_bounds_pending_url_validation_admissions(monkeypatch):
         assert active == 0
 
     asyncio.run(exercise())
+
+
+def test_run_registry_releases_admission_slot_when_validation_is_cancelled(monkeypatch):
+    from server import RunRegistry
+
+    monkeypatch.setenv("NANOU_LLM_API_KEY", "test-only-model-key")
+    monkeypatch.setenv("NANOU_MAX_CONCURRENT_RUNS", "1")
+    monkeypatch.setenv("NANOU_MAX_QUEUED_RUNS", "0")
+
+    registry = RunRegistry()
+    validation_started = asyncio.Event()
+
+    async def wait_for_validation(_url):
+        validation_started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(server, "_assert_public_url", wait_for_validation)
+
+    async def exercise():
+        admission = asyncio.create_task(
+            registry.start("cancelled validation", "https://example.com", None, 1)
+        )
+        await asyncio.wait_for(validation_started.wait(), timeout=2)
+        assert registry._pending_admissions == 1
+
+        admission.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await admission
+
+        assert registry._pending_admissions == 0
+        assert registry.records == {}
+
+    asyncio.run(exercise())
