@@ -893,3 +893,67 @@ def test_run_queue_overflow_returns_http_429(monkeypatch):
     assert response.status_code == 429
     assert response.headers["retry-after"] == "5"
     assert response.json()["error"] == "Autonomous run queue is full."
+
+
+def test_run_registry_bounds_pending_url_validation_admissions(monkeypatch):
+    from server import RunRegistry, RunQueueFullError
+
+    monkeypatch.setenv("NANOU_LLM_API_KEY", "test-only-model-key")
+    monkeypatch.setenv("NANOU_MAX_CONCURRENT_RUNS", "1")
+    monkeypatch.setenv("NANOU_MAX_QUEUED_RUNS", "1")
+
+    registry = RunRegistry()
+    validation_gate = asyncio.Event()
+    both_validating = asyncio.Event()
+    execution_gate = asyncio.Event()
+    validation_count = 0
+    active = 0
+    peak_active = 0
+
+    async def delayed_public_url(url):
+        nonlocal validation_count
+        validation_count += 1
+        if validation_count == 2:
+            both_validating.set()
+        await validation_gate.wait()
+        return url
+
+    async def fake_run_autonomous(*_args):
+        nonlocal active, peak_active
+        active += 1
+        peak_active = max(peak_active, active)
+        try:
+            await execution_gate.wait()
+            return {"session_id": None, "answer": "synthetic admission result"}
+        finally:
+            active -= 1
+
+    monkeypatch.setattr(server, "_assert_public_url", delayed_public_url)
+    monkeypatch.setattr(server, "_run_autonomous", fake_run_autonomous)
+
+    async def exercise():
+        first_admission = asyncio.create_task(
+            registry.start("first admission", "https://example.com", None, 1)
+        )
+        second_admission = asyncio.create_task(
+            registry.start("second admission", "https://example.com", None, 1)
+        )
+        await asyncio.wait_for(both_validating.wait(), timeout=2)
+
+        assert registry._pending_admissions == 2
+        with pytest.raises(RunQueueFullError, match="queue is full"):
+            await registry.start("overflow admission", "https://example.com", None, 1)
+
+        validation_gate.set()
+        first, second = await asyncio.gather(first_admission, second_admission)
+        await asyncio.sleep(0)
+        assert first.status == "running"
+        assert second.status == "queued"
+        assert registry._pending_admissions == 0
+
+        execution_gate.set()
+        await asyncio.gather(first.task, second.task)
+        assert peak_active == 1
+        assert active == 0
+
+    asyncio.run(exercise())
