@@ -1090,6 +1090,7 @@ class RunRegistry:
         self.max_queued_runs = _max_queued_runs()
         self.semaphore = asyncio.Semaphore(self.max_concurrent_runs)
         self._start_lock = asyncio.Lock()
+        self._pending_admissions = 0
 
     def _prune_records(self) -> None:
         terminal = sorted(
@@ -1108,26 +1109,38 @@ class RunRegistry:
             raise RuntimeError("Autonomous runner is not configured: set NANOU_LLM_API_KEY in the service environment.")
         if not session_id and not start_url:
             raise ValueError("Provide start_url or an existing session_id.")
-        if start_url:
-            await _assert_public_url(start_url)
         async with self._start_lock:
             active_count = sum(
                 1 for record in self.records.values()
                 if record.status in ("queued", "running")
             )
-            if active_count >= self.max_concurrent_runs + self.max_queued_runs:
+            capacity = self.max_concurrent_runs + self.max_queued_runs
+            if active_count + self._pending_admissions >= capacity:
                 raise RunQueueFullError("Autonomous run queue is full. Retry after an active run finishes.")
-            self._prune_records()
-            record = RunRecord(
-                run_id=str(uuid4()),
-                goal=goal,
-                start_url=start_url,
-                session_id=session_id,
-                max_steps=max(1, min(int(max_steps), MAX_AGENT_STEPS)),
-            )
-            self.records[record.run_id] = record
-            record.task = asyncio.create_task(self._run(record))
-            return record
+            self._pending_admissions += 1
+
+        reservation_active = True
+        try:
+            if start_url:
+                await _assert_public_url(start_url)
+            async with self._start_lock:
+                self._pending_admissions -= 1
+                reservation_active = False
+                self._prune_records()
+                record = RunRecord(
+                    run_id=str(uuid4()),
+                    goal=goal,
+                    start_url=start_url,
+                    session_id=session_id,
+                    max_steps=max(1, min(int(max_steps), MAX_AGENT_STEPS)),
+                )
+                self.records[record.run_id] = record
+                record.task = asyncio.create_task(self._run(record))
+                return record
+        finally:
+            if reservation_active:
+                async with self._start_lock:
+                    self._pending_admissions -= 1
 
     async def _run(self, record: RunRecord) -> None:
         async with self.semaphore:
