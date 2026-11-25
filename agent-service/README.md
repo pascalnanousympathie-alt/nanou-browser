@@ -16,7 +16,9 @@ This is the primary Nanou Browser web service. It provides a browser-based contr
 - `NANOU_LLM_API_KEY` — required for the server-side autonomous runner used by the web control page; direct MCP primitives do not need this second model key.
 - `NANOU_LLM_BASE_URL` — OpenAI-compatible endpoint; default `https://api.deepseek.com`, while Render Free preview sets `https://openrouter.ai/api/v1`.
 - `NANOU_LLM_MODEL` — model name; default `deepseek-chat`, while Render Free preview sets `openrouter/free`.
-- `NANOU_MAX_CONCURRENT_RUNS` — optional async-run limit; default `3`; preview uses `1`.
+- `NANOU_MAX_CONCURRENT_RUNS` — optional async-run execution limit (1–5); default `3`; preview uses `1`.
+- `NANOU_MAX_QUEUED_RUNS` — optional pending-run queue limit (0–100); default `10`; preview uses `4`. Requests beyond the running-plus-queued capacity receive HTTP `429` with `Retry-After`.
+- Completed, failed and cancelled run records are pruned to the latest 100 entries.
 - `NANOU_MAX_SESSIONS` — optional browser-session cap (1–8); default `8`; preview uses `1` to reduce memory pressure.
 - `NANOU_BROWSER_CDP_URL` — optional loopback-only Chrome/Opera DevTools endpoint for local tests. Never expose a CDP port publicly; otherwise the service launches Chromium itself.
 
