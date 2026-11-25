@@ -21,5 +21,7 @@ services:
         value: openrouter/free
       - key: NANOU_MAX_CONCURRENT_RUNS
         value: "1"
+      - key: NANOU_MAX_QUEUED_RUNS
+        value: "4"
       - key: NANOU_MAX_SESSIONS
         value: "1"
