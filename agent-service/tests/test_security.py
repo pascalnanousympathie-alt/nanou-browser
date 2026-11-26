@@ -782,3 +782,211 @@ def test_max_sessions_setting_is_bounded(monkeypatch):
 
     monkeypatch.setenv("NANOU_MAX_SESSIONS", "not-an-int")
     assert _max_sessions() == 8
+
+
+def test_max_queued_runs_setting_is_bounded(monkeypatch):
+    from server import _max_queued_runs
+
+    monkeypatch.setenv("NANOU_MAX_QUEUED_RUNS", "0")
+    assert _max_queued_runs() == 0
+
+    monkeypatch.setenv("NANOU_MAX_QUEUED_RUNS", "25")
+    assert _max_queued_runs() == 25
+
+    monkeypatch.setenv("NANOU_MAX_QUEUED_RUNS", "999")
+    assert _max_queued_runs() == 100
+
+    monkeypatch.setenv("NANOU_MAX_QUEUED_RUNS", "not-an-int")
+    assert _max_queued_runs() == 10
+
+
+def test_run_registry_bounds_queue_and_concurrent_execution(monkeypatch):
+    from server import RunRegistry, RunQueueFullError
+
+    monkeypatch.setenv("NANOU_LLM_API_KEY", "test-only-model-key")
+    monkeypatch.setenv("NANOU_MAX_CONCURRENT_RUNS", "1")
+    monkeypatch.setenv("NANOU_MAX_QUEUED_RUNS", "1")
+
+    async def allow_public_url(url):
+        return url
+
+    monkeypatch.setattr(server, "_assert_public_url", allow_public_url)
+    registry = RunRegistry()
+    release = asyncio.Event()
+    active = 0
+    peak_active = 0
+
+    async def fake_run_autonomous(*_args):
+        nonlocal active, peak_active
+        active += 1
+        peak_active = max(peak_active, active)
+        try:
+            await release.wait()
+            return {"session_id": None, "answer": "synthetic test result"}
+        finally:
+            active -= 1
+
+    monkeypatch.setattr(server, "_run_autonomous", fake_run_autonomous)
+
+    async def exercise():
+        first = await registry.start("first synthetic task", "https://example.com", None, 1)
+        await asyncio.sleep(0)
+        second = await registry.start("second synthetic task", "https://example.com", None, 1)
+        await asyncio.sleep(0)
+
+        assert first.status == "running"
+        assert second.status == "queued"
+        with pytest.raises(RunQueueFullError, match="queue is full"):
+            await registry.start("overflow synthetic task", "https://example.com", None, 1)
+
+        release.set()
+        await asyncio.gather(first.task, second.task)
+        assert first.status == "completed"
+        assert second.status == "completed"
+        assert peak_active == 1
+        assert active == 0
+
+    asyncio.run(exercise())
+
+
+def test_run_registry_prunes_old_terminal_records(monkeypatch):
+    from server import RunRecord, RunRegistry
+
+    monkeypatch.setenv("NANOU_LLM_API_KEY", "test-only-model-key")
+    registry = RunRegistry()
+    for index in range(105):
+        record = RunRecord(
+            run_id=f"finished-{index}",
+            goal="synthetic",
+            start_url=None,
+            session_id=None,
+            max_steps=1,
+            status="completed",
+            created_at=float(index),
+            finished_at=float(index),
+        )
+        registry.records[record.run_id] = record
+
+    registry._prune_records()
+
+    assert len(registry.records) == 100
+    assert "finished-0" not in registry.records
+    assert "finished-4" not in registry.records
+    assert "finished-5" in registry.records
+    assert "finished-104" in registry.records
+
+
+def test_run_queue_overflow_returns_http_429(monkeypatch):
+    monkeypatch.setenv("NANOU_AGENT_API_KEY", "test-only-token")
+
+    async def queue_full(*_args, **_kwargs):
+        raise server.RunQueueFullError("Autonomous run queue is full.")
+
+    monkeypatch.setattr(server.runs, "start", queue_full)
+    client = TestClient(app)
+    response = client.post(
+        "/api/agent/runs",
+        headers={"Authorization": "Bearer test-only-token"},
+        json={"goal": "synthetic task", "start_url": "https://example.com"},
+    )
+
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "5"
+    assert response.json()["error"] == "Autonomous run queue is full."
+
+
+def test_run_registry_bounds_pending_url_validation_admissions(monkeypatch):
+    from server import RunRegistry, RunQueueFullError
+
+    monkeypatch.setenv("NANOU_LLM_API_KEY", "test-only-model-key")
+    monkeypatch.setenv("NANOU_MAX_CONCURRENT_RUNS", "1")
+    monkeypatch.setenv("NANOU_MAX_QUEUED_RUNS", "1")
+
+    registry = RunRegistry()
+    validation_gate = asyncio.Event()
+    both_validating = asyncio.Event()
+    execution_gate = asyncio.Event()
+    validation_count = 0
+    active = 0
+    peak_active = 0
+
+    async def delayed_public_url(url):
+        nonlocal validation_count
+        validation_count += 1
+        if validation_count == 2:
+            both_validating.set()
+        await validation_gate.wait()
+        return url
+
+    async def fake_run_autonomous(*_args):
+        nonlocal active, peak_active
+        active += 1
+        peak_active = max(peak_active, active)
+        try:
+            await execution_gate.wait()
+            return {"session_id": None, "answer": "synthetic admission result"}
+        finally:
+            active -= 1
+
+    monkeypatch.setattr(server, "_assert_public_url", delayed_public_url)
+    monkeypatch.setattr(server, "_run_autonomous", fake_run_autonomous)
+
+    async def exercise():
+        first_admission = asyncio.create_task(
+            registry.start("first admission", "https://example.com", None, 1)
+        )
+        second_admission = asyncio.create_task(
+            registry.start("second admission", "https://example.com", None, 1)
+        )
+        await asyncio.wait_for(both_validating.wait(), timeout=2)
+
+        assert registry._pending_admissions == 2
+        with pytest.raises(RunQueueFullError, match="queue is full"):
+            await registry.start("overflow admission", "https://example.com", None, 1)
+
+        validation_gate.set()
+        first, second = await asyncio.gather(first_admission, second_admission)
+        await asyncio.sleep(0)
+        assert first.status == "running"
+        assert second.status == "queued"
+        assert registry._pending_admissions == 0
+
+        execution_gate.set()
+        await asyncio.gather(first.task, second.task)
+        assert peak_active == 1
+        assert active == 0
+
+    asyncio.run(exercise())
+
+
+def test_run_registry_releases_admission_slot_when_validation_is_cancelled(monkeypatch):
+    from server import RunRegistry
+
+    monkeypatch.setenv("NANOU_LLM_API_KEY", "test-only-model-key")
+    monkeypatch.setenv("NANOU_MAX_CONCURRENT_RUNS", "1")
+    monkeypatch.setenv("NANOU_MAX_QUEUED_RUNS", "0")
+
+    registry = RunRegistry()
+    validation_started = asyncio.Event()
+
+    async def wait_for_validation(_url):
+        validation_started.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(server, "_assert_public_url", wait_for_validation)
+
+    async def exercise():
+        admission = asyncio.create_task(
+            registry.start("cancelled validation", "https://example.com", None, 1)
+        )
+        await asyncio.wait_for(validation_started.wait(), timeout=2)
+        assert registry._pending_admissions == 1
+
+        admission.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await admission
+
+        assert registry._pending_admissions == 0
+        assert registry.records == {}
+
+    asyncio.run(exercise())
